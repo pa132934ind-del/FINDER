@@ -9,7 +9,6 @@ body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-
     background: #111;
     font-family: sans-serif;
 }
@@ -22,23 +21,21 @@ body {
 
 #viewer {
     position: relative;
-
     width: 100vw;
     height: 100vh;
+    overflow: hidden;
 
     display: flex;
     justify-content: center;
     align-items: center;
 
-    overflow: hidden;
-
     user-select: none;
-    touch-action: pan-y;
+    touch-action: none;
+    cursor: none;
 }
 
 #page-bw,
 #page-color {
-
     position: absolute;
 
     max-width: 100%;
@@ -48,19 +45,39 @@ body {
     height: auto;
 
     object-fit: contain;
-
     pointer-events: none;
 
-    transition: opacity .25s ease;
+    transition:
+        opacity .25s ease,
+        transform .25s ease;
 }
 
 #page-bw {
     opacity: 1;
+    z-index: 1;
 }
 
 #page-color {
+    opacity: 1;
+    z-index: 2;
 
-    opacity: 0;
+    --x: 50%;
+    --y: 50%;
+    --r: 0px;
 
-    /* 後でここにマスク演出を追加します */
+    -webkit-mask-image: radial-gradient(
+        circle at var(--x) var(--y),
+        rgba(0,0,0,1) 0px,
+        rgba(0,0,0,1) calc(var(--r) * .45),
+        rgba(0,0,0,.55) calc(var(--r) * .7),
+        rgba(0,0,0,0) var(--r)
+    );
+
+    mask-image: radial-gradient(
+        circle at var(--x) var(--y),
+        rgba(0,0,0,1) 0px,
+        rgba(0,0,0,1) calc(var(--r) * .45),
+        rgba(0,0,0,.55) calc(var(--r) * .7),
+        rgba(0,0,0,0) var(--r)
+    );
 }
