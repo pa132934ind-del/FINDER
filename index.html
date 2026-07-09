@@ -14,10 +14,13 @@
     <main id="viewer">
 
         <!-- 白黒画像 -->
-        <img id="page-bw" draggable="false">
+        <img id="page-bw" draggable="false" alt="Finder page">
 
-        <!-- 将来のカラー演出用 -->
-        <img id="page-color" draggable="false">
+        <!-- カラー画像読み込み用。表示はcanvas側で行う -->
+        <img id="page-color" draggable="false" alt="">
+
+        <!-- 色演出用 -->
+        <canvas id="effect-canvas"></canvas>
 
     </main>
 

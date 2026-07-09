@@ -36,62 +36,11 @@ body {
     touch-action: none;
 
     cursor: none;
-
-    --edge-opacity: 0;
-    --ex1: 50%;
-    --ey1: 50%;
-    --er1: 0px;
-
-    --ex2: 50%;
-    --ey2: 50%;
-    --er2: 0px;
-
-    --ex3: 50%;
-    --ey3: 50%;
-    --er3: 0px;
 }
 
-/* 水面の縁。サイズ指定つきの円に修正 */
-#viewer::after {
-    content: "";
+#page-bw {
     position: absolute;
-    inset: 0;
-    z-index: 4;
-
-    pointer-events: none;
-
-    opacity: var(--edge-opacity);
-
-    background:
-        radial-gradient(
-            circle var(--er1) at var(--ex1) var(--ey1),
-            rgba(255,255,255,0) 0%,
-            rgba(255,255,255,0) 48%,
-            rgba(255,255,255,.045) 57%,
-            rgba(0,0,0,.08) 64%,
-            rgba(0,0,0,0) 78%
-        ),
-        radial-gradient(
-            circle var(--er2) at var(--ex2) var(--ey2),
-            rgba(255,255,255,0) 0%,
-            rgba(255,255,255,.035) 52%,
-            rgba(0,0,0,.06) 66%,
-            rgba(0,0,0,0) 82%
-        ),
-        radial-gradient(
-            circle var(--er3) at var(--ex3) var(--ey3),
-            rgba(255,255,255,0) 0%,
-            rgba(255,255,255,.025) 54%,
-            rgba(0,0,0,.045) 68%,
-            rgba(0,0,0,0) 84%
-        );
-
-    filter: blur(3px);
-}
-
-#page-bw,
-#page-color {
-    position: absolute;
+    z-index: 1;
 
     max-width: 100%;
     max-height: 100%;
@@ -102,6 +51,8 @@ body {
     object-fit: contain;
     pointer-events: none;
 
+    opacity: 1;
+
     transition:
         opacity .26s ease,
         transform .28s ease;
@@ -109,94 +60,26 @@ body {
     will-change: opacity, transform;
 }
 
-#page-bw {
-    z-index: 1;
-    opacity: 1;
+/* 読み込み用。実際の色表示はcanvasで行う */
+#page-color {
+    display: none;
 }
 
-#page-color {
+#effect-canvas {
+    position: absolute;
+    inset: 0;
     z-index: 2;
+
+    width: 100vw;
+    height: 100vh;
+
+    pointer-events: none;
+
     opacity: 1;
 
-    --x1: 50%;
-    --y1: 50%;
-    --r1: 0px;
+    transition:
+        opacity .26s ease,
+        transform .28s ease;
 
-    --x2: 50%;
-    --y2: 50%;
-    --r2: 0px;
-
-    --x3: 50%;
-    --y3: 50%;
-    --r3: 0px;
-
-    --x4: 50%;
-    --y4: 50%;
-    --r4: 0px;
-
-    filter: saturate(1.06) contrast(1.01);
-
-    /*
-        円のサイズを必ず var(--r*) で指定。
-        これで画面全体に色が付く事故を防ぎます。
-    */
-    -webkit-mask-image:
-        radial-gradient(
-            circle var(--r1) at var(--x1) var(--y1),
-            rgba(0,0,0,1) 0%,
-            rgba(0,0,0,.92) 30%,
-            rgba(0,0,0,.52) 58%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r2) at var(--x2) var(--y2),
-            rgba(0,0,0,.55) 0%,
-            rgba(0,0,0,.32) 44%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r3) at var(--x3) var(--y3),
-            rgba(0,0,0,.42) 0%,
-            rgba(0,0,0,.24) 42%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r4) at var(--x4) var(--y4),
-            rgba(0,0,0,.34) 0%,
-            rgba(0,0,0,.18) 40%,
-            rgba(0,0,0,0) 100%
-        );
-
-    mask-image:
-        radial-gradient(
-            circle var(--r1) at var(--x1) var(--y1),
-            rgba(0,0,0,1) 0%,
-            rgba(0,0,0,.92) 30%,
-            rgba(0,0,0,.52) 58%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r2) at var(--x2) var(--y2),
-            rgba(0,0,0,.55) 0%,
-            rgba(0,0,0,.32) 44%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r3) at var(--x3) var(--y3),
-            rgba(0,0,0,.42) 0%,
-            rgba(0,0,0,.24) 42%,
-            rgba(0,0,0,0) 100%
-        ),
-        radial-gradient(
-            circle var(--r4) at var(--x4) var(--y4),
-            rgba(0,0,0,.34) 0%,
-            rgba(0,0,0,.18) 40%,
-            rgba(0,0,0,0) 100%
-        );
-
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-
-    -webkit-mask-composite: source-over;
-    mask-composite: add;
+    will-change: opacity, transform;
 }

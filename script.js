@@ -1,21 +1,31 @@
 const pages = [
     {
+        unit: "CoMETIK",
+        effect: "comet",
         bw: "images/CoMETIK/01/bw.jpg",
         color: "images/CoMETIK/01/color.jpg"
     },
     {
+        unit: "CoMETIK",
+        effect: "comet",
         bw: "images/CoMETIK/02/bw.jpg",
         color: "images/CoMETIK/02/color.jpg"
     },
     {
+        unit: "CoMETIK",
+        effect: "comet",
         bw: "images/CoMETIK/03/bw.jpg",
         color: "images/CoMETIK/03/color.jpg"
     },
     {
+        unit: "SHHis",
+        effect: "focus",
         bw: "images/SHHis/04/bw.jpg",
         color: "images/SHHis/04/color.jpg"
     },
     {
+        unit: "SHHis",
+        effect: "focus",
         bw: "images/SHHis/05/bw.jpg",
         color: "images/SHHis/05/color.jpg"
     }
@@ -26,47 +36,89 @@ let currentPage = 0;
 const viewer = document.getElementById("viewer");
 const bwImage = document.getElementById("page-bw");
 const colorImage = document.getElementById("page-color");
+const canvas = document.getElementById("effect-canvas");
+
+const ctx = canvas.getContext("2d");
+const maskCanvas = document.createElement("canvas");
+const maskCtx = maskCanvas.getContext("2d");
+
+let viewW = 0;
+let viewH = 0;
+let dpr = 1;
 
 let isChanging = false;
 
-// 色窓の最大サイズ。置きっぱなしでもこれ以上は広がらない。
-const MAX_RADIUS = 150;
-
-// 通常時の見える範囲。
-const NORMAL_RADIUS = 120;
-
-// タップ・クリック時だけ少し大きくする。
-const TAP_RADIUS = 158;
-
-// 小さいほど、カーソルに遅れて水っぽく追従する。
-const FOLLOW_SPEED = 0.03;
-
-// 半径が広がる速度。小さいほどじわっと広がる。
-const RADIUS_GROW_SPEED = 0.005;
-
-// 半径が消える速度。
-const RADIUS_SHRINK_SPEED = 0.08;
-
-// 境目の暗さ。強すぎたら0.28くらいに下げる。
-const EDGE_OPACITY = 0.10;
-
-let targetX = 0;
-let targetY = 0;
-let targetViewerX = 0;
-let targetViewerY = 0;
-let targetRadius = 0;
-
-let currentX = 0;
-let currentY = 0;
-let currentViewerX = 0;
-let currentViewerY = 0;
-let currentRadius = 0;
-
+let pointerVisible = false;
+let pointerX = 0;
+let pointerY = 0;
+let followerX = 0;
+let followerY = 0;
 let pointerStarted = false;
 
 let pointerDown = false;
 let pointerStartX = 0;
 let pointerStartY = 0;
+
+let lastPointerX = 0;
+let lastPointerY = 0;
+let lastMoveTime = performance.now();
+
+let cometParticles = [];
+let sparkleParticles = [];
+
+let focusRadius = 0;
+let focusClarity = 0;
+let focusCircleSeeds = [];
+
+const settings = {
+    comet: {
+        headRadius: 38,
+        headMaskAlpha: 0.72,
+
+        // 軽量化：粒数と残り方を少し抑える
+        tailFade: 0.962,
+        followSpeed: 0.16,
+        particleLimit: 80,
+
+        // ブラーは弱めにして処理を軽くする
+        tailBlur: 5
+    },
+
+    focus: {
+        movingRadius: 78,
+        stillRadius: 152,
+        stillGrowSpeed: 0.045,
+        moveShrinkSpeed: 0.055,
+        followSpeed: 0.075,
+        claritySpeed: 0.05,
+        sparkleChance: 0.055
+    }
+};
+
+function currentEffect() {
+    return pages[currentPage]?.effect || "focus";
+}
+
+function resizeCanvas() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    viewW = window.innerWidth;
+    viewH = window.innerHeight;
+
+    canvas.width = Math.floor(viewW * dpr);
+    canvas.height = Math.floor(viewH * dpr);
+
+    maskCanvas.width = Math.floor(viewW * dpr);
+    maskCanvas.height = Math.floor(viewH * dpr);
+
+    canvas.style.width = `${viewW}px`;
+    canvas.style.height = `${viewH}px`;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    maskCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener("resize", resizeCanvas);
 
 function preloadImages() {
     pages.forEach(page => {
@@ -82,168 +134,549 @@ function loadImage(src) {
     return new Promise(resolve => {
         const image = new Image();
 
-        image.onload = () => resolve(src);
+        image.onload = () => resolve(image);
         image.onerror = () => resolve(null);
 
         image.src = src;
     });
 }
 
-function setColorTarget(clientX, clientY, radius = NORMAL_RADIUS) {
-    const imageRect = colorImage.getBoundingClientRect();
-    const viewerRect = viewer.getBoundingClientRect();
+function wait(ms) {
+    return new Promise(resolve => {
+        setTimeout(resolve, ms);
+    });
+}
 
-    const localX = clientX - imageRect.left;
-    const localY = clientY - imageRect.top;
+function getImageRect() {
+    return bwImage.getBoundingClientRect();
+}
 
-    const viewerX = clientX - viewerRect.left;
-    const viewerY = clientY - viewerRect.top;
+function getCometMaxTailLength() {
+    const rect = getImageRect();
 
-    if (
-        localX < 0 ||
-        localY < 0 ||
-        localX > imageRect.width ||
-        localY > imageRect.height
-    ) {
-        hideColorTarget();
+    if (rect.width > 0) {
+        return rect.width * 0.36;
+    }
+
+    return viewW * 0.36;
+}
+
+function isInsideImage(x, y) {
+    const rect = getImageRect();
+
+    return (
+        x >= rect.left &&
+        y >= rect.top &&
+        x <= rect.right &&
+        y <= rect.bottom
+    );
+}
+
+function resetEffect() {
+    pointerVisible = false;
+    pointerStarted = false;
+
+    cometParticles = [];
+    sparkleParticles = [];
+
+    focusRadius = 0;
+    focusClarity = 0;
+    focusCircleSeeds = createFocusCircleSeeds();
+
+    ctx.clearRect(0, 0, viewW, viewH);
+    maskCtx.clearRect(0, 0, viewW, viewH);
+}
+
+function createFocusCircleSeeds() {
+    const baseAngles = [
+        Math.PI * 0.08,
+        Math.PI * 0.56,
+        Math.PI * 1.02,
+        Math.PI * 1.42,
+        Math.PI * 1.78
+    ];
+
+    return baseAngles.map((angle, index) => ({
+        angle: angle + (Math.random() - 0.5) * 0.22,
+        speed: 0.35 + Math.random() * 0.45,
+        phase: Math.random() * Math.PI * 2,
+        offsetScale: 0.7 + Math.random() * 0.5,
+        pulse: 0.85 + Math.random() * 0.35,
+        index
+    }));
+}
+
+function updatePointer(x, y) {
+    if (!isInsideImage(x, y)) {
+        pointerVisible = false;
         return;
     }
 
-    targetX = localX;
-    targetY = localY;
+    const dx = pointerStarted ? x - lastPointerX : 0;
+    const dy = pointerStarted ? y - lastPointerY : 0;
 
-    targetViewerX = viewerX;
-    targetViewerY = viewerY;
-
-    targetRadius = Math.min(radius, MAX_RADIUS);
+    pointerX = x;
+    pointerY = y;
+    pointerVisible = true;
 
     if (!pointerStarted) {
-        currentX = targetX;
-        currentY = targetY;
+        followerX = x;
+        followerY = y;
 
-        currentViewerX = targetViewerX;
-        currentViewerY = targetViewerY;
+        lastPointerX = x;
+        lastPointerY = y;
 
-        currentRadius = 0;
         pointerStarted = true;
+    }
+
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 1.5) {
+        lastMoveTime = performance.now();
+    }
+
+    if (currentEffect() === "comet") {
+        addCometParticle(x, y, dx, dy, dist);
+    }
+
+    if (currentEffect() === "focus") {
+        maybeAddSparkle(x, y);
+    }
+
+    lastPointerX = x;
+    lastPointerY = y;
+}
+
+function addCometParticle(x, y, dx, dy, speed) {
+    // 軽量化：細かすぎる移動では粒を増やさない
+    if (speed < 2.0) return;
+
+    const angle = Math.atan2(dy, dx);
+    const maxTail = getCometMaxTailLength();
+    const tailLength = clamp(speed * 15, 100, maxTail);
+
+    cometParticles.push({
+        x,
+        y,
+        angle,
+        speed,
+        length: tailLength,
+
+        // 逆三角の広がり
+        nearWidth: clamp(20 + speed * 0.12, 22, 42),
+        farWidth: clamp(58 + speed * 0.34, 62, 112),
+
+        life: 1,
+        seed: Math.random()
+    });
+
+    if (cometParticles.length > settings.comet.particleLimit) {
+        cometParticles.shift();
     }
 }
 
-function hideColorTarget() {
-    targetRadius = 0;
+function maybeAddSparkle(x, y) {
+    if (!pointerVisible) return;
+    if (focusClarity < 0.22) return;
+    if (Math.random() > settings.focus.sparkleChance) return;
+
+    const radius = 30 + Math.random() * focusRadius * 0.75;
+    const angle = Math.random() * Math.PI * 2;
+
+    sparkleParticles.push({
+        x: x + Math.cos(angle) * radius,
+        y: y + Math.sin(angle) * radius,
+        size: 4 + Math.random() * 9,
+        life: 1,
+        rotate: Math.random() * Math.PI
+    });
+
+    if (sparkleParticles.length > 35) {
+        sparkleParticles.shift();
+    }
 }
 
-function applyWaterMask() {
-    currentX += (targetX - currentX) * FOLLOW_SPEED;
-    currentY += (targetY - currentY) * FOLLOW_SPEED;
+function render() {
+    ctx.clearRect(0, 0, viewW, viewH);
+    maskCtx.clearRect(0, 0, viewW, viewH);
 
-    currentViewerX += (targetViewerX - currentViewerX) * FOLLOW_SPEED;
-    currentViewerY += (targetViewerY - currentViewerY) * FOLLOW_SPEED;
+    updateFollower();
 
-    const radiusSpeed =
-        targetRadius > currentRadius
-            ? RADIUS_GROW_SPEED
-            : RADIUS_SHRINK_SPEED;
+    if (colorImage.complete && colorImage.naturalWidth > 0) {
+        if (currentEffect() === "comet") {
+            drawCometMask(maskCtx);
+        }
 
-    currentRadius += (targetRadius - currentRadius) * radiusSpeed;
+        if (currentEffect() === "focus") {
+            drawFocusMask(maskCtx);
+        }
 
+        drawColorThroughMask();
+        drawHighlights();
+    }
+
+    decayParticles();
+
+    requestAnimationFrame(render);
+}
+
+function updateFollower() {
+    if (!pointerStarted) return;
+
+    const effect = currentEffect();
+
+    if (effect === "comet") {
+        followerX += (pointerX - followerX) * settings.comet.followSpeed;
+        followerY += (pointerY - followerY) * settings.comet.followSpeed;
+    }
+
+    if (effect === "focus") {
+        followerX += (pointerX - followerX) * settings.focus.followSpeed;
+        followerY += (pointerY - followerY) * settings.focus.followSpeed;
+
+        const stillTime = performance.now() - lastMoveTime;
+        const stillness = pointerVisible
+            ? clamp(stillTime / 950, 0, 1)
+            : 0;
+
+        const targetRadius = pointerVisible
+            ? settings.focus.movingRadius + (settings.focus.stillRadius - settings.focus.movingRadius) * stillness
+            : 0;
+
+        const radiusSpeed =
+            targetRadius > focusRadius
+                ? settings.focus.stillGrowSpeed
+                : settings.focus.moveShrinkSpeed;
+
+        focusRadius += (targetRadius - focusRadius) * radiusSpeed;
+
+        const targetClarity = pointerVisible ? stillness : 0;
+        focusClarity += (targetClarity - focusClarity) * settings.focus.claritySpeed;
+    }
+}
+
+function drawColorThroughMask() {
+    const rect = getImageRect();
+
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    ctx.save();
+
+    ctx.drawImage(
+        colorImage,
+        rect.left,
+        rect.top,
+        rect.width,
+        rect.height
+    );
+
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.drawImage(maskCanvas, 0, 0, viewW, viewH);
+
+    ctx.restore();
+}
+
+function drawCometMask(targetCtx) {
+    targetCtx.save();
+
+    cometParticles.forEach(p => {
+        const alpha = p.life;
+        const len = p.length * alpha;
+
+        const nearHalf = p.nearWidth * 0.35 * alpha;
+        const farHalf = p.farWidth * alpha;
+
+        targetCtx.save();
+        targetCtx.translate(p.x, p.y);
+        targetCtx.rotate(p.angle);
+
+        // 単純な逆三角尾＋軽いブラー
+        targetCtx.filter = `blur(${settings.comet.tailBlur}px)`;
+
+        const gradient = targetCtx.createLinearGradient(-len, 0, 8, 0);
+        gradient.addColorStop(0, "rgba(0,0,0,0)");
+        gradient.addColorStop(0.18, `rgba(0,0,0,${0.20 * alpha})`);
+        gradient.addColorStop(0.55, `rgba(0,0,0,${0.50 * alpha})`);
+        gradient.addColorStop(1, `rgba(0,0,0,${0.82 * alpha})`);
+
+        targetCtx.fillStyle = gradient;
+
+        targetCtx.beginPath();
+        targetCtx.moveTo(8, -nearHalf);
+        targetCtx.lineTo(-len, -farHalf);
+        targetCtx.lineTo(-len, farHalf);
+        targetCtx.lineTo(8, nearHalf);
+        targetCtx.closePath();
+        targetCtx.fill();
+
+        targetCtx.filter = "none";
+        targetCtx.restore();
+    });
+
+    if (pointerVisible) {
+        drawRadialMask(
+            targetCtx,
+            followerX,
+            followerY,
+            settings.comet.headRadius,
+            settings.comet.headMaskAlpha
+        );
+    }
+
+    targetCtx.restore();
+}
+
+function drawFocusMask(targetCtx) {
+    if (focusRadius < 1) return;
+
+    const r = focusRadius;
+    const clarity = focusClarity;
     const time = performance.now() / 1000;
-    const r = currentRadius;
 
-    const wobbleX1 = Math.cos(time * 1.7) * r * 0.05;
-    const wobbleY1 = Math.sin(time * 1.9) * r * 0.04;
+    /*
+        SHHis：
+        移動時はまばら。
+        ピントが合うほど中央へ集まって、ほぼ重なる。
+    */
+    const gather = clamp(clarity, 0, 1);
 
-    const wobbleX2 = Math.cos(time * 2.3 + 1.2) * r * 0.20;
-    const wobbleY2 = Math.sin(time * 2.0 + 0.6) * r * 0.14;
+    // clarityが高いほど、配置のズレと動きを小さくする
+    const spreadScale = 1 - gather * 0.78;
+    const driftScale = 1 - gather * 0.86;
 
-    const wobbleX3 = Math.cos(time * 1.5 + 2.4) * r * 0.18;
-    const wobbleY3 = Math.sin(time * 2.7 + 1.8) * r * 0.18;
+    const baseCircles = [
+        { bx: 0, by: 0, rr: 0.52, a: 0.30 + clarity * 0.20 },
+        { bx: 0.26, by: -0.08, rr: 0.44, a: 0.22 + clarity * 0.18 },
+        { bx: -0.22, by: 0.16, rr: 0.42, a: 0.20 + clarity * 0.16 },
+        { bx: 0.04, by: 0.30, rr: 0.34, a: 0.16 + clarity * 0.14 },
+        { bx: -0.02, by: -0.27, rr: 0.31, a: 0.14 + clarity * 0.12 }
+    ];
 
-    const wobbleX4 = Math.cos(time * 2.9 + 3.1) * r * 0.24;
-    const wobbleY4 = Math.sin(time * 1.8 + 2.2) * r * 0.12;
+    targetCtx.save();
 
-    colorImage.style.setProperty("--x1", `${currentX + wobbleX1}px`);
-    colorImage.style.setProperty("--y1", `${currentY + wobbleY1}px`);
-    colorImage.style.setProperty("--r1", `${r}px`);
+    baseCircles.forEach((circle, i) => {
+        const seed = focusCircleSeeds[i] || {
+            angle: i,
+            speed: 1,
+            phase: i,
+            offsetScale: 1,
+            pulse: 1
+        };
 
-    colorImage.style.setProperty("--x2", `${currentX + wobbleX2}px`);
-    colorImage.style.setProperty("--y2", `${currentY + wobbleY2}px`);
-    colorImage.style.setProperty("--r2", `${r * 0.76}px`);
+        const driftAmount = (8 + r * 0.06) * seed.offsetScale * driftScale;
+        const driftWave = Math.sin(time * seed.speed + seed.phase);
+        const driftX = Math.cos(seed.angle) * driftAmount * driftWave;
+        const driftY = Math.sin(seed.angle) * driftAmount * driftWave;
 
-    colorImage.style.setProperty("--x3", `${currentX - wobbleX3}px`);
-    colorImage.style.setProperty("--y3", `${currentY + wobbleY3}px`);
-    colorImage.style.setProperty("--r3", `${r * 0.62}px`);
+        const pulseAmount = 0.035 * seed.pulse * (0.45 + driftScale * 0.55);
+        const pulse = 1 + Math.sin(time * (0.7 + seed.speed * 0.2) + seed.phase) * pulseAmount;
 
-    colorImage.style.setProperty("--x4", `${currentX + wobbleX4}px`);
-    colorImage.style.setProperty("--y4", `${currentY - wobbleY4}px`);
-    colorImage.style.setProperty("--r4", `${r * 0.46}px`);
+        const cx = followerX + circle.bx * r * spreadScale + driftX;
+        const cy = followerY + circle.by * r * spreadScale + driftY;
+        const cr = circle.rr * r * pulse;
 
-    const edgeOpacity = Math.min(r / 90, 1) * EDGE_OPACITY;
+        targetCtx.fillStyle = `rgba(0,0,0,${circle.a})`;
+        targetCtx.beginPath();
+        targetCtx.arc(cx, cy, cr, 0, Math.PI * 2);
+        targetCtx.fill();
+    });
 
-    viewer.style.setProperty("--edge-opacity", edgeOpacity);
+    targetCtx.restore();
+}
 
-    viewer.style.setProperty("--ex1", `${currentViewerX + wobbleX1}px`);
-    viewer.style.setProperty("--ey1", `${currentViewerY + wobbleY1}px`);
-    viewer.style.setProperty("--er1", `${r * 1.05}px`);
+function drawRadialMask(targetCtx, x, y, radius, alpha = 1) {
+    const gradient = targetCtx.createRadialGradient(
+        x,
+        y,
+        radius * 0.08,
+        x,
+        y,
+        radius
+    );
 
-    viewer.style.setProperty("--ex2", `${currentViewerX + wobbleX2}px`);
-    viewer.style.setProperty("--ey2", `${currentViewerY + wobbleY2}px`);
-    viewer.style.setProperty("--er2", `${r * 0.82}px`);
+    gradient.addColorStop(0, `rgba(0,0,0,${alpha})`);
+    gradient.addColorStop(0.55, `rgba(0,0,0,${alpha * 0.62})`);
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
 
-    viewer.style.setProperty("--ex3", `${currentViewerX - wobbleX3}px`);
-    viewer.style.setProperty("--ey3", `${currentViewerY + wobbleY3}px`);
-    viewer.style.setProperty("--er3", `${r * 0.68}px`);
+    targetCtx.fillStyle = gradient;
 
-    requestAnimationFrame(applyWaterMask);
+    targetCtx.beginPath();
+    targetCtx.arc(x, y, radius, 0, Math.PI * 2);
+    targetCtx.fill();
+}
+
+function drawHighlights() {
+    const effect = currentEffect();
+
+    if (effect === "comet") {
+        drawCometHighlights();
+    }
+
+    if (effect === "focus") {
+        drawFocusHighlights();
+    }
+}
+
+function drawCometHighlights() {
+    if (!pointerVisible) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    // タップ面の点を消して、ぼやけた光だけにする
+    const glow = ctx.createRadialGradient(
+        followerX,
+        followerY,
+        0,
+        followerX,
+        followerY,
+        72
+    );
+
+    glow.addColorStop(0, "rgba(255,255,255,.18)");
+    glow.addColorStop(0.38, "rgba(255,255,255,.075)");
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(followerX, followerY, 72, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function drawFocusHighlights() {
+    const r = focusRadius;
+    const clarity = focusClarity;
+    const time = performance.now() / 1000;
+
+    if (r > 1) {
+        ctx.save();
+
+        ctx.globalAlpha = 0.18 + clarity * 0.16;
+        ctx.strokeStyle = "rgba(255,255,255,.35)";
+        ctx.lineWidth = 1;
+
+        const gather = clamp(clarity, 0, 1);
+        const spreadScale = 1 - gather * 0.78;
+        const driftScale = 1 - gather * 0.86;
+
+        const outlineBase = [
+            { bx: 0, by: 0, rr: 0.52 },
+            { bx: 0.26, by: -0.08, rr: 0.44 },
+            { bx: -0.22, by: 0.16, rr: 0.42 }
+        ];
+
+        outlineBase.forEach((circle, i) => {
+            const seed = focusCircleSeeds[i] || {
+                angle: i,
+                speed: 1,
+                phase: i,
+                offsetScale: 1,
+                pulse: 1
+            };
+
+            const driftAmount = (8 + r * 0.06) * seed.offsetScale * driftScale;
+            const driftWave = Math.sin(time * seed.speed + seed.phase);
+            const driftX = Math.cos(seed.angle) * driftAmount * driftWave;
+            const driftY = Math.sin(seed.angle) * driftAmount * driftWave;
+
+            const pulseAmount = 0.035 * seed.pulse * (0.45 + driftScale * 0.55);
+            const pulse = 1 + Math.sin(time * (0.7 + seed.speed * 0.2) + seed.phase) * pulseAmount;
+
+            const cx = followerX + circle.bx * r * spreadScale + driftX;
+            const cy = followerY + circle.by * r * spreadScale + driftY;
+            const cr = circle.rr * r * pulse;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+
+        ctx.restore();
+    }
+
+    sparkleParticles.forEach(p => {
+        const alpha = p.life * focusClarity;
+
+        if (alpha <= 0.02) return;
+
+        ctx.save();
+
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotate);
+
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = "rgba(255,255,255,.55)";
+        ctx.lineWidth = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(-p.size, 0);
+        ctx.lineTo(p.size, 0);
+        ctx.moveTo(0, -p.size);
+        ctx.lineTo(0, p.size);
+        ctx.stroke();
+
+        ctx.restore();
+    });
+}
+
+function decayParticles() {
+    cometParticles.forEach(p => {
+        p.life *= settings.comet.tailFade;
+    });
+
+    cometParticles = cometParticles.filter(p => p.life > 0.018);
+
+    sparkleParticles.forEach(p => {
+        p.life *= 0.94;
+        p.rotate += 0.025;
+    });
+
+    sparkleParticles = sparkleParticles.filter(p => p.life > 0.035);
 }
 
 async function showPage(index, direction = 1) {
     if (isChanging) return;
 
     isChanging = true;
-    hideColorTarget();
+    resetEffect();
 
     bwImage.style.opacity = 0;
-    colorImage.style.opacity = 0;
+    canvas.style.opacity = 0;
 
     bwImage.style.transform = `translateX(${direction * 14}px) scale(.985)`;
-    colorImage.style.transform = `translateX(${direction * 14}px) scale(.985)`;
+    canvas.style.transform = `translateX(${direction * 14}px) scale(.985)`;
 
-    await wait(170);
+    await wait(160);
 
-    const bwSrc = await loadImage(pages[index].bw);
-    const colorSrc = await loadImage(pages[index].color);
+    const bw = await loadImage(pages[index].bw);
+    const color = await loadImage(pages[index].color);
 
-    if (bwSrc) {
-        bwImage.src = bwSrc;
+    if (bw) {
+        bwImage.src = bw.src;
     }
 
-    if (colorSrc) {
-        colorImage.src = colorSrc;
-    } else if (bwSrc) {
-        colorImage.src = bwSrc;
+    if (color) {
+        colorImage.src = color.src;
+    } else if (bw) {
+        colorImage.src = bw.src;
     }
 
     bwImage.style.transform = `translateX(${-direction * 14}px) scale(.985)`;
-    colorImage.style.transform = `translateX(${-direction * 14}px) scale(.985)`;
+    canvas.style.transform = `translateX(${-direction * 14}px) scale(.985)`;
 
-    await wait(30);
+    await wait(40);
 
     bwImage.style.opacity = 1;
-    colorImage.style.opacity = 1;
+    canvas.style.opacity = 1;
 
     bwImage.style.transform = "translateX(0) scale(1)";
-    colorImage.style.transform = "translateX(0) scale(1)";
+    canvas.style.transform = "translateX(0) scale(1)";
 
     await wait(280);
 
     isChanging = false;
-}
-
-function wait(ms) {
-    return new Promise(resolve => {
-        setTimeout(resolve, ms);
-    });
 }
 
 function nextPage() {
@@ -270,25 +703,30 @@ function prevPage() {
     showPage(currentPage, -1);
 }
 
-viewer.addEventListener("pointermove", (event) => {
-    setColorTarget(event.clientX, event.clientY, NORMAL_RADIUS);
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+viewer.addEventListener("pointermove", event => {
+    updatePointer(event.clientX, event.clientY);
 });
 
 viewer.addEventListener("pointerleave", () => {
-    hideColorTarget();
+    pointerVisible = false;
 });
 
-viewer.addEventListener("pointerdown", (event) => {
+viewer.addEventListener("pointerdown", event => {
     if (event.button !== undefined && event.button !== 0) return;
 
     pointerDown = true;
+
     pointerStartX = event.clientX;
     pointerStartY = event.clientY;
 
-    setColorTarget(event.clientX, event.clientY, TAP_RADIUS);
+    updatePointer(event.clientX, event.clientY);
 });
 
-viewer.addEventListener("pointerup", (event) => {
+viewer.addEventListener("pointerup", event => {
     if (!pointerDown) return;
 
     pointerDown = false;
@@ -296,7 +734,7 @@ viewer.addEventListener("pointerup", (event) => {
     const diffX = event.clientX - pointerStartX;
     const diffY = event.clientY - pointerStartY;
 
-    setColorTarget(event.clientX, event.clientY, TAP_RADIUS);
+    updatePointer(event.clientX, event.clientY);
 
     if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY)) {
         if (diffX < 0) {
@@ -315,7 +753,12 @@ viewer.addEventListener("pointerup", (event) => {
     }
 });
 
-document.addEventListener("keydown", (event) => {
+viewer.addEventListener("pointercancel", () => {
+    pointerVisible = false;
+    pointerDown = false;
+});
+
+document.addEventListener("keydown", event => {
     if (event.key === "ArrowRight") {
         nextPage();
     }
@@ -325,6 +768,7 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
+resizeCanvas();
 preloadImages();
-applyWaterMask();
+render();
 showPage(currentPage, 1);
