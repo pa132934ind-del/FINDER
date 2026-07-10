@@ -38,6 +38,9 @@ const bwImage = document.getElementById("page-bw");
 const colorImage = document.getElementById("page-color");
 const canvas = document.getElementById("effect-canvas");
 
+const prevButton = document.getElementById("prev-button");
+const nextButton = document.getElementById("next-button");
+
 const ctx = canvas.getContext("2d");
 const maskCanvas = document.createElement("canvas");
 const maskCtx = maskCanvas.getContext("2d");
@@ -56,8 +59,6 @@ let followerY = 0;
 let pointerStarted = false;
 
 let pointerDown = false;
-let pointerStartX = 0;
-let pointerStartY = 0;
 
 let lastPointerX = 0;
 let lastPointerY = 0;
@@ -83,7 +84,6 @@ const settings = {
     },
 
     focus: {
-        // 昨日78にした値を反映
         movingRadius: 78,
         stillRadius: 152,
         stillGrowSpeed: 0.045,
@@ -743,50 +743,34 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+/*
+    ここが今回の大事な変更。
+    スワイプやタップでのページ送りはやめる。
+    画像上の操作は「色を見る」専用にする。
+*/
 viewer.addEventListener("pointermove", event => {
+    event.preventDefault();
     updatePointer(event.clientX, event.clientY);
-});
-
-viewer.addEventListener("pointerleave", () => {
-    pointerVisible = false;
-});
+}, { passive: false });
 
 viewer.addEventListener("pointerdown", event => {
     if (event.button !== undefined && event.button !== 0) return;
 
+    event.preventDefault();
+
     pointerDown = true;
-
-    pointerStartX = event.clientX;
-    pointerStartY = event.clientY;
-
     updatePointer(event.clientX, event.clientY);
-});
+}, { passive: false });
 
 viewer.addEventListener("pointerup", event => {
-    if (!pointerDown) return;
+    event.preventDefault();
 
     pointerDown = false;
-
-    const diffX = event.clientX - pointerStartX;
-    const diffY = event.clientY - pointerStartY;
-
     updatePointer(event.clientX, event.clientY);
+}, { passive: false });
 
-    if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY)) {
-        if (diffX < 0) {
-            nextPage();
-        } else {
-            prevPage();
-        }
-
-        return;
-    }
-
-    if (Math.abs(diffX) < 12 && Math.abs(diffY) < 12) {
-        setTimeout(() => {
-            nextPage();
-        }, 120);
-    }
+viewer.addEventListener("pointerleave", () => {
+    pointerVisible = false;
 });
 
 viewer.addEventListener("pointercancel", () => {
@@ -794,6 +778,35 @@ viewer.addEventListener("pointercancel", () => {
     pointerDown = false;
 });
 
+/* 長押しコピー・コンテキストメニュー対策 */
+document.addEventListener("contextmenu", event => {
+    event.preventDefault();
+});
+
+/* 矢印ボタン */
+prevButton.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    event.stopPropagation();
+});
+
+nextButton.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    event.stopPropagation();
+});
+
+prevButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    prevPage();
+});
+
+nextButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    nextPage();
+});
+
+/* キーボード */
 document.addEventListener("keydown", event => {
     if (event.key === "ArrowRight") {
         nextPage();

@@ -2,6 +2,11 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
 }
 
 html,
@@ -12,6 +17,8 @@ body {
 
     background: #111;
     font-family: sans-serif;
+
+    overscroll-behavior: none;
 }
 
 body {
@@ -32,10 +39,13 @@ body {
 
     overflow: hidden;
 
-    user-select: none;
     touch-action: none;
-
     cursor: none;
+
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
 }
 
 #page-bw {
@@ -58,6 +68,11 @@ body {
         transform .28s ease;
 
     will-change: opacity, transform;
+
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
 }
 
 /* 読み込み用。実際の色表示はcanvasで行う */
@@ -65,10 +80,6 @@ body {
     display: none;
 }
 
-/*
-    ここが今回の修正点。
-    canvasを画面全体ではなく、JS側で画像と同じ位置・同じサイズに置く。
-*/
 #effect-canvas {
     position: absolute;
     z-index: 2;
@@ -82,4 +93,84 @@ body {
         transform .28s ease;
 
     will-change: opacity, transform;
+}
+
+.page-button {
+    position: absolute;
+    top: 50%;
+    z-index: 10;
+
+    transform: translateY(-50%);
+
+    width: 48px;
+    height: 84px;
+
+    border: none;
+    border-radius: 999px;
+
+    background: rgba(0, 0, 0, .22);
+    color: rgba(255, 255, 255, .72);
+
+    font-size: 52px;
+    line-height: 1;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    cursor: pointer;
+
+    -webkit-tap-highlight-color: transparent;
+
+    transition:
+        background .18s ease,
+        color .18s ease,
+        opacity .18s ease,
+        transform .18s ease;
+}
+
+.page-button-left {
+    left: 14px;
+}
+
+.page-button-right {
+    right: 14px;
+}
+
+.page-button:active {
+    background: rgba(255, 255, 255, .16);
+    color: rgba(255, 255, 255, .9);
+    transform: translateY(-50%) scale(.94);
+}
+
+@media (hover: hover) {
+    .page-button {
+        opacity: .42;
+    }
+
+    .page-button:hover {
+        opacity: .9;
+        background: rgba(255, 255, 255, .12);
+        color: rgba(255, 255, 255, .95);
+    }
+}
+
+@media (max-width: 600px) {
+    .page-button {
+        width: 42px;
+        height: 72px;
+
+        font-size: 46px;
+
+        background: rgba(0, 0, 0, .18);
+        color: rgba(255, 255, 255, .68);
+    }
+
+    .page-button-left {
+        left: 8px;
+    }
+
+    .page-button-right {
+        right: 8px;
+    }
 }
