@@ -65,13 +65,13 @@ body {
     display: none;
 }
 
+/*
+    ここが今回の修正点。
+    canvasを画面全体ではなく、JS側で画像と同じ位置・同じサイズに置く。
+*/
 #effect-canvas {
     position: absolute;
-    inset: 0;
     z-index: 2;
-
-    width: 100vw;
-    height: 100vh;
 
     pointer-events: none;
 

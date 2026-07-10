@@ -75,16 +75,15 @@ const settings = {
         headRadius: 38,
         headMaskAlpha: 0.72,
 
-        // 軽量化：粒数と残り方を少し抑える
         tailFade: 0.962,
         followSpeed: 0.16,
         particleLimit: 80,
 
-        // ブラーは弱めにして処理を軽くする
         tailBlur: 5
     },
 
     focus: {
+        // 昨日78にした値を反映
         movingRadius: 78,
         stillRadius: 152,
         stillGrowSpeed: 0.045,
@@ -99,26 +98,65 @@ function currentEffect() {
     return pages[currentPage]?.effect || "focus";
 }
 
-function resizeCanvas() {
+function getImageRect() {
+    return bwImage.getBoundingClientRect();
+}
+
+function syncCanvasToImage() {
+    const imageRect = getImageRect();
+    const viewerRect = viewer.getBoundingClientRect();
+
+    if (
+        imageRect.width <= 0 ||
+        imageRect.height <= 0 ||
+        !Number.isFinite(imageRect.width) ||
+        !Number.isFinite(imageRect.height)
+    ) {
+        return;
+    }
+
     dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    viewW = window.innerWidth;
-    viewH = window.innerHeight;
+    const nextW = imageRect.width;
+    const nextH = imageRect.height;
 
-    canvas.width = Math.floor(viewW * dpr);
-    canvas.height = Math.floor(viewH * dpr);
+    const left = imageRect.left - viewerRect.left;
+    const top = imageRect.top - viewerRect.top;
 
-    maskCanvas.width = Math.floor(viewW * dpr);
-    maskCanvas.height = Math.floor(viewH * dpr);
+    const widthChanged = Math.abs(nextW - viewW) > 0.5;
+    const heightChanged = Math.abs(nextH - viewH) > 0.5;
 
+    viewW = nextW;
+    viewH = nextH;
+
+    canvas.style.left = `${left}px`;
+    canvas.style.top = `${top}px`;
     canvas.style.width = `${viewW}px`;
     canvas.style.height = `${viewH}px`;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    maskCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (
+        widthChanged ||
+        heightChanged ||
+        canvas.width !== Math.floor(viewW * dpr) ||
+        canvas.height !== Math.floor(viewH * dpr)
+    ) {
+        canvas.width = Math.floor(viewW * dpr);
+        canvas.height = Math.floor(viewH * dpr);
+
+        maskCanvas.width = Math.floor(viewW * dpr);
+        maskCanvas.height = Math.floor(viewH * dpr);
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        maskCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.clearRect(0, 0, viewW, viewH);
+        maskCtx.clearRect(0, 0, viewW, viewH);
+    }
 }
 
-window.addEventListener("resize", resizeCanvas);
+window.addEventListener("resize", () => {
+    syncCanvasToImage();
+});
 
 function preloadImages() {
     pages.forEach(page => {
@@ -147,29 +185,32 @@ function wait(ms) {
     });
 }
 
-function getImageRect() {
-    return bwImage.getBoundingClientRect();
-}
-
 function getCometMaxTailLength() {
-    const rect = getImageRect();
-
-    if (rect.width > 0) {
-        return rect.width * 0.36;
+    if (viewW > 0) {
+        return viewW * 0.36;
     }
 
-    return viewW * 0.36;
+    return window.innerWidth * 0.36;
 }
 
-function isInsideImage(x, y) {
+function isInsideImage(clientX, clientY) {
     const rect = getImageRect();
 
     return (
-        x >= rect.left &&
-        y >= rect.top &&
-        x <= rect.right &&
-        y <= rect.bottom
+        clientX >= rect.left &&
+        clientY >= rect.top &&
+        clientX <= rect.right &&
+        clientY <= rect.bottom
     );
+}
+
+function toLocalPoint(clientX, clientY) {
+    const rect = getImageRect();
+
+    return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+    };
 }
 
 function resetEffect() {
@@ -206,25 +247,27 @@ function createFocusCircleSeeds() {
     }));
 }
 
-function updatePointer(x, y) {
-    if (!isInsideImage(x, y)) {
+function updatePointer(clientX, clientY) {
+    if (!isInsideImage(clientX, clientY)) {
         pointerVisible = false;
         return;
     }
 
-    const dx = pointerStarted ? x - lastPointerX : 0;
-    const dy = pointerStarted ? y - lastPointerY : 0;
+    const local = toLocalPoint(clientX, clientY);
 
-    pointerX = x;
-    pointerY = y;
+    const dx = pointerStarted ? local.x - lastPointerX : 0;
+    const dy = pointerStarted ? local.y - lastPointerY : 0;
+
+    pointerX = local.x;
+    pointerY = local.y;
     pointerVisible = true;
 
     if (!pointerStarted) {
-        followerX = x;
-        followerY = y;
+        followerX = local.x;
+        followerY = local.y;
 
-        lastPointerX = x;
-        lastPointerY = y;
+        lastPointerX = local.x;
+        lastPointerY = local.y;
 
         pointerStarted = true;
     }
@@ -236,19 +279,18 @@ function updatePointer(x, y) {
     }
 
     if (currentEffect() === "comet") {
-        addCometParticle(x, y, dx, dy, dist);
+        addCometParticle(local.x, local.y, dx, dy, dist);
     }
 
     if (currentEffect() === "focus") {
-        maybeAddSparkle(x, y);
+        maybeAddSparkle(local.x, local.y);
     }
 
-    lastPointerX = x;
-    lastPointerY = y;
+    lastPointerX = local.x;
+    lastPointerY = local.y;
 }
 
 function addCometParticle(x, y, dx, dy, speed) {
-    // 軽量化：細かすぎる移動では粒を増やさない
     if (speed < 2.0) return;
 
     const angle = Math.atan2(dy, dx);
@@ -262,7 +304,6 @@ function addCometParticle(x, y, dx, dy, speed) {
         speed,
         length: tailLength,
 
-        // 逆三角の広がり
         nearWidth: clamp(20 + speed * 0.12, 22, 42),
         farWidth: clamp(58 + speed * 0.34, 62, 112),
 
@@ -297,12 +338,14 @@ function maybeAddSparkle(x, y) {
 }
 
 function render() {
+    syncCanvasToImage();
+
     ctx.clearRect(0, 0, viewW, viewH);
     maskCtx.clearRect(0, 0, viewW, viewH);
 
     updateFollower();
 
-    if (colorImage.complete && colorImage.naturalWidth > 0) {
+    if (colorImage.complete && colorImage.naturalWidth > 0 && viewW > 0 && viewH > 0) {
         if (currentEffect() === "comet") {
             drawCometMask(maskCtx);
         }
@@ -356,18 +399,16 @@ function updateFollower() {
 }
 
 function drawColorThroughMask() {
-    const rect = getImageRect();
-
-    if (rect.width <= 0 || rect.height <= 0) return;
+    if (viewW <= 0 || viewH <= 0) return;
 
     ctx.save();
 
     ctx.drawImage(
         colorImage,
-        rect.left,
-        rect.top,
-        rect.width,
-        rect.height
+        0,
+        0,
+        viewW,
+        viewH
     );
 
     ctx.globalCompositeOperation = "destination-in";
@@ -390,7 +431,6 @@ function drawCometMask(targetCtx) {
         targetCtx.translate(p.x, p.y);
         targetCtx.rotate(p.angle);
 
-        // 単純な逆三角尾＋軽いブラー
         targetCtx.filter = `blur(${settings.comet.tailBlur}px)`;
 
         const gradient = targetCtx.createLinearGradient(-len, 0, 8, 0);
@@ -433,14 +473,8 @@ function drawFocusMask(targetCtx) {
     const clarity = focusClarity;
     const time = performance.now() / 1000;
 
-    /*
-        SHHis：
-        移動時はまばら。
-        ピントが合うほど中央へ集まって、ほぼ重なる。
-    */
     const gather = clamp(clarity, 0, 1);
 
-    // clarityが高いほど、配置のズレと動きを小さくする
     const spreadScale = 1 - gather * 0.78;
     const driftScale = 1 - gather * 0.86;
 
@@ -523,7 +557,6 @@ function drawCometHighlights() {
     ctx.save();
     ctx.globalCompositeOperation = "screen";
 
-    // タップ面の点を消して、ぼやけた光だけにする
     const glow = ctx.createRadialGradient(
         followerX,
         followerY,
@@ -663,6 +696,9 @@ async function showPage(index, direction = 1) {
         colorImage.src = bw.src;
     }
 
+    await wait(50);
+    syncCanvasToImage();
+
     bwImage.style.transform = `translateX(${-direction * 14}px) scale(.985)`;
     canvas.style.transform = `translateX(${-direction * 14}px) scale(.985)`;
 
@@ -768,7 +804,6 @@ document.addEventListener("keydown", event => {
     }
 });
 
-resizeCanvas();
 preloadImages();
 render();
 showPage(currentPage, 1);
