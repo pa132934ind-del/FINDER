@@ -40,7 +40,7 @@ body {
     overflow: hidden;
 
     touch-action: none;
-    cursor: none;
+    cursor: crosshair;
 
     -webkit-user-select: none;
     user-select: none;
@@ -93,6 +93,177 @@ body {
         transform .28s ease;
 
     will-change: opacity, transform;
+}
+
+/* cover専用レイヤー */
+.cover-layer {
+    position: absolute;
+
+    display: none;
+
+    object-fit: fill;
+    pointer-events: none;
+
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
+
+    transition:
+        opacity .22s ease,
+        filter .18s ease,
+        transform .16s ease;
+}
+
+#viewer.is-cover .cover-layer {
+    display: block;
+}
+
+#cover-suisai {
+    z-index: 5;
+
+    opacity: 0;
+    mix-blend-mode: multiply;
+    filter: saturate(1.15);
+}
+
+#viewer.is-cover-hot #cover-suisai {
+    opacity: .86;
+    filter: saturate(1.45) blur(.2px);
+}
+
+.cover-i-layer {
+    z-index: 7;
+
+    opacity: .48;
+    mix-blend-mode: multiply;
+
+    filter:
+        grayscale(1)
+        saturate(.35)
+        contrast(1.02);
+}
+
+#viewer.is-cover-hot .cover-i-layer {
+    opacity: .88;
+
+    filter:
+        grayscale(.05)
+        saturate(1.65)
+        contrast(1.05)
+        blur(.15px);
+}
+
+.cover-i-rgb {
+    z-index: 8;
+
+    opacity: 0;
+    mix-blend-mode: multiply;
+
+    filter:
+        saturate(2.2)
+        contrast(1.15);
+}
+
+#cover-i-red {
+    filter:
+        hue-rotate(-8deg)
+        saturate(2.4)
+        contrast(1.1);
+}
+
+#cover-i-blue {
+    filter:
+        hue-rotate(185deg)
+        saturate(1.8)
+        contrast(1.08);
+}
+
+/* ときどき違和感 */
+#viewer.is-cover-glitch #cover-i-main {
+    filter:
+        grayscale(.1)
+        saturate(1.8)
+        contrast(1.12)
+        blur(1.1px);
+
+    transform: translate(1.5px, -.5px) scaleX(1.012);
+}
+
+#viewer.is-cover-glitch #cover-i-red {
+    opacity: .42;
+    transform: translate(2.5px, 0);
+}
+
+#viewer.is-cover-glitch #cover-i-blue {
+    opacity: .30;
+    transform: translate(-2.5px, .6px);
+}
+
+/* cover専用：透明な開始ボタン */
+#cover-start-button {
+    position: absolute;
+    z-index: 12;
+
+    display: none;
+
+    border: none;
+    background: transparent;
+
+    cursor: pointer;
+
+    -webkit-tap-highlight-color: transparent;
+}
+
+#viewer.is-cover #cover-start-button {
+    display: block;
+}
+
+/* cover専用：しばらく操作がない時のヒント */
+#cover-hint {
+    position: absolute;
+    z-index: 13;
+
+    display: none;
+
+    color: rgba(190, 24, 42, .72);
+
+    font-family: sans-serif;
+    font-size: clamp(12px, 1.5vw, 18px);
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0.14em;
+
+    text-align: center;
+    white-space: nowrap;
+
+    pointer-events: none;
+
+    transform: translate(-50%, -50%);
+
+    opacity: 0;
+
+    text-shadow:
+        0 0 8px rgba(190, 24, 42, .20),
+        0 0 18px rgba(190, 24, 42, .12);
+
+    transition:
+        opacity .45s ease,
+        filter .45s ease,
+        transform .45s ease;
+}
+
+#viewer.is-cover.is-cover-hint #cover-hint {
+    display: block;
+    opacity: .94;
+
+    filter: blur(0);
+    transform: translate(-50%, -50%);
+}
+
+/* coverでは矢印を消す */
+#viewer.is-cover .page-button {
+    display: none;
 }
 
 .page-button {

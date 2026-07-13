@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" translate="no" class="notranslate">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
     <title>Finder</title>
 
     <link rel="stylesheet" href="style.css">
@@ -13,16 +14,25 @@
 
     <main id="viewer">
 
-        <!-- 白黒画像 -->
         <img id="page-bw" draggable="false" alt="Finder page">
 
-        <!-- カラー画像読み込み用。表示はcanvas側で行う -->
         <img id="page-color" draggable="false" alt="">
 
-        <!-- 色演出用 -->
         <canvas id="effect-canvas"></canvas>
 
-        <!-- ページ送り -->
+        <!-- cover専用：水彩にじみ -->
+        <img id="cover-suisai" class="cover-layer" draggable="false" alt="">
+
+        <!-- cover専用：i画像。RGBずらし用に同じ画像を重ねる -->
+        <img id="cover-i-main" class="cover-layer cover-i-layer" draggable="false" alt="">
+        <img id="cover-i-red" class="cover-layer cover-i-rgb" draggable="false" alt="">
+        <img id="cover-i-blue" class="cover-layer cover-i-rgb" draggable="false" alt="">
+
+        <!-- cover専用：透明な開始ボタン -->
+        <button id="cover-start-button" type="button" aria-label="Finderを開始"></button>
+
+        <!-- cover専用：しばらく操作がない時のヒント -->
+<div id="cover-hint" class="notranslate" translate="no" aria-hidden="true">i に触れてください</div>
         <button id="prev-button" class="page-button page-button-left" type="button" aria-label="前のページ">
             ‹
         </button>

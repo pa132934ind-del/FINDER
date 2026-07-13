@@ -1,4 +1,13 @@
+const COVER_BASE_PATH = "images/cover/cover";
+
 const pages = [
+    {
+        unit: "cover",
+        effect: "cover",
+        bw: `${COVER_BASE_PATH}/bw.jpg`,
+        color: `${COVER_BASE_PATH}/color.jpg`
+    },
+
     {
         unit: "CoMETIK",
         effect: "comet",
@@ -17,6 +26,7 @@ const pages = [
         bw: "images/CoMETIK/03/bw.jpg",
         color: "images/CoMETIK/03/color.jpg"
     },
+
     {
         unit: "SHHis",
         effect: "focus",
@@ -28,8 +38,73 @@ const pages = [
         effect: "focus",
         bw: "images/SHHis/05/bw.jpg",
         color: "images/SHHis/05/color.jpg"
+    },
+
+    {
+        unit: "noctchill",
+        effect: "water",
+        bw: "images/noctchill/06/bw.jpg",
+        color: "images/noctchill/06/color.jpg"
+    },
+    {
+        unit: "noctchill",
+        effect: "water",
+        bw: "images/noctchill/07/bw.jpg",
+        color: "images/noctchill/07/color.jpg"
+    },
+    {
+        unit: "noctchill",
+        effect: "water",
+        bw: "images/noctchill/08/bw.jpg",
+        color: "images/noctchill/08/color.jpg"
+    },
+    {
+        unit: "noctchill",
+        effect: "water",
+        bw: "images/noctchill/09/bw.jpg",
+        color: "images/noctchill/09/color.jpg"
+    },
+
+    {
+        unit: "straylight",
+        effect: "glitch",
+        bw: "images/straylight/10/bw.jpg",
+        color: "images/straylight/10/color.jpg"
+    },
+
+    {
+        unit: "afterword",
+        effect: "static",
+        bw: "images/afterword/afterword/bw.jpg",
+        color: "images/afterword/afterword/bw.jpg"
     }
 ];
+
+/*
+    coverのi位置調整。
+*/
+const COVER_I_X = 0.494;
+const COVER_I_Y = 0.357;
+
+/*
+    coverの透明ボタンサイズ。
+*/
+const COVER_BUTTON_SIZE = 0.135;
+
+/*
+    iに近づいた時の反応範囲。
+*/
+const COVER_HOT_RADIUS = 0.105;
+
+/*
+    coverで何も操作されなかった時にヒントを出すまでの時間。
+*/
+const COVER_HINT_DELAY = 4200;
+
+/*
+    ヒントの位置。
+*/
+const COVER_HINT_OFFSET_Y = 0.160;
 
 let currentPage = 0;
 
@@ -38,8 +113,31 @@ const bwImage = document.getElementById("page-bw");
 const colorImage = document.getElementById("page-color");
 const canvas = document.getElementById("effect-canvas");
 
+const coverSuisai = document.getElementById("cover-suisai");
+const coverIMain = document.getElementById("cover-i-main");
+const coverIRed = document.getElementById("cover-i-red");
+const coverIBlue = document.getElementById("cover-i-blue");
+const coverStartButton = document.getElementById("cover-start-button");
+const coverHint = document.getElementById("cover-hint");
+
 const prevButton = document.getElementById("prev-button");
 const nextButton = document.getElementById("next-button");
+
+if (coverSuisai) {
+    coverSuisai.src = `${COVER_BASE_PATH}/cover_suisai.png`;
+}
+
+if (coverIMain) {
+    coverIMain.src = `${COVER_BASE_PATH}/cover_i.png`;
+}
+
+if (coverIRed) {
+    coverIRed.src = `${COVER_BASE_PATH}/cover_i.png`;
+}
+
+if (coverIBlue) {
+    coverIBlue.src = `${COVER_BASE_PATH}/cover_i.png`;
+}
 
 const ctx = canvas.getContext("2d");
 const maskCanvas = document.createElement("canvas");
@@ -64,22 +162,37 @@ let lastPointerX = 0;
 let lastPointerY = 0;
 let lastMoveTime = performance.now();
 
+let lastWaterSpawnX = 0;
+let lastWaterSpawnY = 0;
+let lastDropTime = 0;
+
 let cometParticles = [];
 let sparkleParticles = [];
+let waterParticles = [];
+let waterDrops = [];
+let waterRipples = [];
 
 let focusRadius = 0;
 let focusClarity = 0;
 let focusCircleSeeds = [];
 
+let coverIX = 0;
+let coverIY = 0;
+let coverHotness = 0;
+let coverTargetHotness = 0;
+
+let nextGlitchTime = performance.now() + 1800 + Math.random() * 2600;
+let glitchUntil = 0;
+
+let lastCoverInteractionTime = performance.now();
+
 const settings = {
     comet: {
         headRadius: 38,
         headMaskAlpha: 0.72,
-
         tailFade: 0.962,
         followSpeed: 0.16,
         particleLimit: 80,
-
         tailBlur: 5
     },
 
@@ -91,11 +204,36 @@ const settings = {
         followSpeed: 0.075,
         claritySpeed: 0.05,
         sparkleChance: 0.055
+    },
+
+    water: {
+        baseRadius: 102,
+        maxRadius: 210,
+        followSpeed: 0.040,
+        particleLimit: 58,
+        bloomFade: 0.965,
+        blur: 13,
+        spawnDistance: 6,
+        rippleLimit: 12,
+        dropLimit: 4
+    },
+
+    glitch: {
+        followSpeed: 0.18,
+        windowWidth: 280,
+        windowHeight: 125,
+        blockSize: 22,
+        edgeJitter: 4,
+        rgbShift: 12
     }
 };
 
 function currentEffect() {
     return pages[currentPage]?.effect || "focus";
+}
+
+function isCoverPage() {
+    return pages[currentPage]?.unit === "cover";
 }
 
 function getImageRect() {
@@ -152,6 +290,64 @@ function syncCanvasToImage() {
         ctx.clearRect(0, 0, viewW, viewH);
         maskCtx.clearRect(0, 0, viewW, viewH);
     }
+
+    syncCoverElements(imageRect, viewerRect);
+}
+
+function syncCoverElements(imageRect, viewerRect) {
+    const isCover = isCoverPage();
+
+    viewer.classList.toggle("is-cover", isCover);
+
+    if (!isCover) {
+        viewer.classList.remove("is-cover-hot");
+        viewer.classList.remove("is-cover-glitch");
+        viewer.classList.remove("is-cover-hint");
+
+        coverTargetHotness = 0;
+        coverHotness = 0;
+
+        return;
+    }
+
+    const left = imageRect.left - viewerRect.left;
+    const top = imageRect.top - viewerRect.top;
+
+    const layers = [
+        coverSuisai,
+        coverIMain,
+        coverIRed,
+        coverIBlue
+    ];
+
+    layers.forEach(layer => {
+        if (!layer) return;
+
+        layer.style.left = `${left}px`;
+        layer.style.top = `${top}px`;
+        layer.style.width = `${viewW}px`;
+        layer.style.height = `${viewH}px`;
+    });
+
+    coverIX = viewW * COVER_I_X;
+    coverIY = viewH * COVER_I_Y;
+
+    if (coverStartButton) {
+        const buttonSize = Math.min(viewW, viewH) * COVER_BUTTON_SIZE;
+
+        coverStartButton.style.left = `${left + coverIX - buttonSize / 2}px`;
+        coverStartButton.style.top = `${top + coverIY - buttonSize / 2}px`;
+        coverStartButton.style.width = `${buttonSize}px`;
+        coverStartButton.style.height = `${buttonSize}px`;
+    }
+
+    if (coverHint) {
+        const hintLeft = left + coverIX;
+        const hintTop = top + coverIY + Math.min(viewW, viewH) * COVER_HINT_OFFSET_Y;
+
+        coverHint.style.left = `${hintLeft}px`;
+        coverHint.style.top = `${hintTop}px`;
+    }
 }
 
 window.addEventListener("resize", () => {
@@ -165,6 +361,14 @@ function preloadImages() {
 
         const color = new Image();
         color.src = page.color;
+    });
+
+    [
+        `${COVER_BASE_PATH}/cover_suisai.png`,
+        `${COVER_BASE_PATH}/cover_i.png`
+    ].forEach(src => {
+        const image = new Image();
+        image.src = src;
     });
 }
 
@@ -219,10 +423,26 @@ function resetEffect() {
 
     cometParticles = [];
     sparkleParticles = [];
+    waterParticles = [];
+    waterDrops = [];
+    waterRipples = [];
 
     focusRadius = 0;
     focusClarity = 0;
     focusCircleSeeds = createFocusCircleSeeds();
+
+    lastWaterSpawnX = 0;
+    lastWaterSpawnY = 0;
+    lastDropTime = 0;
+
+    coverTargetHotness = 0;
+    coverHotness = 0;
+
+    viewer.classList.remove("is-cover-hot");
+    viewer.classList.remove("is-cover-glitch");
+    viewer.classList.remove("is-cover-hint");
+
+    lastCoverInteractionTime = performance.now();
 
     ctx.clearRect(0, 0, viewW, viewH);
     maskCtx.clearRect(0, 0, viewW, viewH);
@@ -250,6 +470,7 @@ function createFocusCircleSeeds() {
 function updatePointer(clientX, clientY) {
     if (!isInsideImage(clientX, clientY)) {
         pointerVisible = false;
+        coverTargetHotness = 0;
         return;
     }
 
@@ -269,6 +490,9 @@ function updatePointer(clientX, clientY) {
         lastPointerX = local.x;
         lastPointerY = local.y;
 
+        lastWaterSpawnX = local.x;
+        lastWaterSpawnY = local.y;
+
         pointerStarted = true;
     }
 
@@ -276,6 +500,13 @@ function updatePointer(clientX, clientY) {
 
     if (dist > 1.5) {
         lastMoveTime = performance.now();
+    }
+
+    if (currentEffect() === "cover") {
+        lastCoverInteractionTime = performance.now();
+        viewer.classList.remove("is-cover-hint");
+
+        updateCoverHotness(local.x, local.y);
     }
 
     if (currentEffect() === "comet") {
@@ -286,8 +517,28 @@ function updatePointer(clientX, clientY) {
         maybeAddSparkle(local.x, local.y);
     }
 
+    if (currentEffect() === "water") {
+        addWaterParticle(local.x, local.y, dist);
+
+        if (pointerDown) {
+            maybeSpawnWaterDrop(local.x, local.y);
+        }
+    }
+
     lastPointerX = local.x;
     lastPointerY = local.y;
+}
+
+function updateCoverHotness(x, y) {
+    if (!isCoverPage()) {
+        coverTargetHotness = 0;
+        return;
+    }
+
+    const distance = Math.hypot(x - coverIX, y - coverIY);
+    const radius = Math.min(viewW, viewH) * COVER_HOT_RADIUS;
+
+    coverTargetHotness = 1 - clamp((distance - radius * 0.20) / radius, 0, 1);
 }
 
 function addCometParticle(x, y, dx, dy, speed) {
@@ -303,10 +554,8 @@ function addCometParticle(x, y, dx, dy, speed) {
         angle,
         speed,
         length: tailLength,
-
         nearWidth: clamp(20 + speed * 0.12, 22, 42),
         farWidth: clamp(58 + speed * 0.34, 62, 112),
-
         life: 1,
         seed: Math.random()
     });
@@ -337,6 +586,68 @@ function maybeAddSparkle(x, y) {
     }
 }
 
+function addWaterParticle(x, y, speed) {
+    const moved = Math.hypot(x - lastWaterSpawnX, y - lastWaterSpawnY);
+
+    if (moved < settings.water.spawnDistance && speed < 2.5) return;
+
+    waterParticles.push({
+        x,
+        y,
+        radius: clamp(settings.water.baseRadius + speed * 1.8, 82, settings.water.maxRadius),
+        life: 1,
+        seed: Math.random() * Math.PI * 2
+    });
+
+    lastWaterSpawnX = x;
+    lastWaterSpawnY = y;
+
+    if (waterParticles.length > settings.water.particleLimit) {
+        waterParticles.shift();
+    }
+}
+
+function maybeSpawnWaterDrop(x, y) {
+    const now = performance.now();
+
+    if (now - lastDropTime < 560) return;
+
+    lastDropTime = now;
+
+    waterDrops.push({
+        x,
+        y,
+        startY: y - Math.min(viewH * 0.18, 130),
+        t: 0,
+        life: 1
+    });
+
+    if (waterDrops.length > settings.water.dropLimit) {
+        waterDrops.shift();
+    }
+}
+
+function spawnRipple(x, y) {
+    waterRipples.push({
+        x,
+        y,
+        radius: 14,
+        life: 1
+    });
+
+    waterParticles.push({
+        x,
+        y,
+        radius: settings.water.maxRadius * 0.82,
+        life: 1,
+        seed: Math.random() * Math.PI * 2
+    });
+
+    if (waterRipples.length > settings.water.rippleLimit) {
+        waterRipples.shift();
+    }
+}
+
 function render() {
     syncCanvasToImage();
 
@@ -344,14 +655,29 @@ function render() {
     maskCtx.clearRect(0, 0, viewW, viewH);
 
     updateFollower();
+    updateCoverState();
+    updateCoverGlitch();
+    updateCoverHint();
 
     if (colorImage.complete && colorImage.naturalWidth > 0 && viewW > 0 && viewH > 0) {
+        if (currentEffect() === "cover") {
+            drawCoverMask(maskCtx);
+        }
+
         if (currentEffect() === "comet") {
             drawCometMask(maskCtx);
         }
 
         if (currentEffect() === "focus") {
             drawFocusMask(maskCtx);
+        }
+
+        if (currentEffect() === "water") {
+            drawWaterMask(maskCtx);
+        }
+
+        if (currentEffect() === "glitch") {
+            drawGlitchMask(maskCtx);
         }
 
         drawColorThroughMask();
@@ -367,6 +693,11 @@ function updateFollower() {
     if (!pointerStarted) return;
 
     const effect = currentEffect();
+
+    if (effect === "cover") {
+        followerX += (pointerX - followerX) * 0.16;
+        followerY += (pointerY - followerY) * 0.16;
+    }
 
     if (effect === "comet") {
         followerX += (pointerX - followerX) * settings.comet.followSpeed;
@@ -396,6 +727,68 @@ function updateFollower() {
         const targetClarity = pointerVisible ? stillness : 0;
         focusClarity += (targetClarity - focusClarity) * settings.focus.claritySpeed;
     }
+
+    if (effect === "water") {
+        followerX += (pointerX - followerX) * settings.water.followSpeed;
+        followerY += (pointerY - followerY) * settings.water.followSpeed;
+    }
+
+    if (effect === "glitch") {
+        followerX += (pointerX - followerX) * settings.glitch.followSpeed;
+        followerY += (pointerY - followerY) * settings.glitch.followSpeed;
+    }
+}
+
+function updateCoverState() {
+    if (!isCoverPage()) {
+        coverHotness += (0 - coverHotness) * 0.18;
+        viewer.classList.remove("is-cover-hot");
+        return;
+    }
+
+    coverHotness += (coverTargetHotness - coverHotness) * 0.14;
+
+    if (coverHotness > 0.12) {
+        viewer.classList.add("is-cover-hot");
+    } else {
+        viewer.classList.remove("is-cover-hot");
+    }
+}
+
+function updateCoverGlitch() {
+    const now = performance.now();
+
+    if (!isCoverPage()) {
+        viewer.classList.remove("is-cover-glitch");
+        return;
+    }
+
+    if (now > nextGlitchTime) {
+        glitchUntil = now + 90 + Math.random() * 140;
+        nextGlitchTime = now + 2200 + Math.random() * 4200;
+    }
+
+    if (now < glitchUntil) {
+        viewer.classList.add("is-cover-glitch");
+    } else {
+        viewer.classList.remove("is-cover-glitch");
+    }
+}
+
+function updateCoverHint() {
+    if (!isCoverPage()) {
+        viewer.classList.remove("is-cover-hint");
+        return;
+    }
+
+    const now = performance.now();
+    const isIdle = now - lastCoverInteractionTime > COVER_HINT_DELAY;
+
+    if (isIdle && coverHotness < 0.12) {
+        viewer.classList.add("is-cover-hint");
+    } else {
+        viewer.classList.remove("is-cover-hint");
+    }
 }
 
 function drawColorThroughMask() {
@@ -415,6 +808,55 @@ function drawColorThroughMask() {
     ctx.drawImage(maskCanvas, 0, 0, viewW, viewH);
 
     ctx.restore();
+}
+
+function drawCoverMask(targetCtx) {
+    if (!pointerVisible && coverHotness <= 0.01) return;
+
+    if (pointerVisible) {
+        const cursorRadius = Math.min(viewW, viewH) * 0.170;
+
+        const cursorGradient = targetCtx.createRadialGradient(
+            followerX,
+            followerY,
+            cursorRadius * 0.08,
+            followerX,
+            followerY,
+            cursorRadius
+        );
+
+        cursorGradient.addColorStop(0, "rgba(0,0,0,0.52)");
+        cursorGradient.addColorStop(0.42, "rgba(0,0,0,0.32)");
+        cursorGradient.addColorStop(0.72, "rgba(0,0,0,0.14)");
+        cursorGradient.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = cursorGradient;
+        targetCtx.beginPath();
+        targetCtx.arc(followerX, followerY, cursorRadius, 0, Math.PI * 2);
+        targetCtx.fill();
+    }
+
+    if (coverHotness > 0.01) {
+        const iRadius = Math.min(viewW, viewH) * (0.075 + coverHotness * 0.045);
+
+        const iGradient = targetCtx.createRadialGradient(
+            coverIX,
+            coverIY,
+            iRadius * 0.10,
+            coverIX,
+            coverIY,
+            iRadius
+        );
+
+        iGradient.addColorStop(0, `rgba(0,0,0,${0.34 * coverHotness})`);
+        iGradient.addColorStop(0.46, `rgba(0,0,0,${0.16 * coverHotness})`);
+        iGradient.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = iGradient;
+        targetCtx.beginPath();
+        targetCtx.arc(coverIX, coverIY, iRadius, 0, Math.PI * 2);
+        targetCtx.fill();
+    }
 }
 
 function drawCometMask(targetCtx) {
@@ -518,6 +960,225 @@ function drawFocusMask(targetCtx) {
     targetCtx.restore();
 }
 
+function drawWaterMask(targetCtx) {
+    targetCtx.save();
+    targetCtx.filter = `blur(${settings.water.blur}px)`;
+
+    waterParticles.forEach(p => {
+        const alpha = p.life;
+        const r = p.radius * (0.9 + (1 - alpha) * 0.22);
+
+        const g1 = targetCtx.createRadialGradient(
+            p.x,
+            p.y,
+            r * 0.10,
+            p.x,
+            p.y,
+            r
+        );
+
+        g1.addColorStop(0, `rgba(0,0,0,${0.56 * alpha})`);
+        g1.addColorStop(0.42, `rgba(0,0,0,${0.34 * alpha})`);
+        g1.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = g1;
+        targetCtx.beginPath();
+        targetCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        targetCtx.fill();
+
+        const ox = Math.cos(p.seed) * r * 0.18;
+        const oy = Math.sin(p.seed) * r * 0.14;
+
+        const g2 = targetCtx.createRadialGradient(
+            p.x + ox,
+            p.y + oy,
+            r * 0.05,
+            p.x + ox,
+            p.y + oy,
+            r * 0.78
+        );
+
+        g2.addColorStop(0, `rgba(0,0,0,${0.30 * alpha})`);
+        g2.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = g2;
+        targetCtx.beginPath();
+        targetCtx.arc(p.x + ox, p.y + oy, r * 0.78, 0, Math.PI * 2);
+        targetCtx.fill();
+    });
+
+    waterRipples.forEach(rp => {
+        const alpha = rp.life;
+        const r = rp.radius;
+
+        const g = targetCtx.createRadialGradient(
+            rp.x,
+            rp.y,
+            r * 0.08,
+            rp.x,
+            rp.y,
+            r
+        );
+
+        g.addColorStop(0, `rgba(0,0,0,${0.34 * alpha})`);
+        g.addColorStop(0.58, `rgba(0,0,0,${0.18 * alpha})`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = g;
+        targetCtx.beginPath();
+        targetCtx.arc(rp.x, rp.y, r, 0, Math.PI * 2);
+        targetCtx.fill();
+    });
+
+    if (pointerVisible) {
+        const leaderR = clamp(settings.water.baseRadius + 44, 116, 172);
+
+        const g = targetCtx.createRadialGradient(
+            followerX,
+            followerY,
+            leaderR * 0.12,
+            followerX,
+            followerY,
+            leaderR
+        );
+
+        g.addColorStop(0, "rgba(0,0,0,0.58)");
+        g.addColorStop(0.42, "rgba(0,0,0,0.34)");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = g;
+        targetCtx.beginPath();
+        targetCtx.arc(followerX, followerY, leaderR, 0, Math.PI * 2);
+        targetCtx.fill();
+    }
+
+    targetCtx.filter = "none";
+    targetCtx.restore();
+}
+
+function drawGlitchMask(targetCtx) {
+    if (!pointerVisible) return;
+
+    const time = performance.now() / 1000;
+
+    const block = settings.glitch.blockSize;
+    const jitter = settings.glitch.edgeJitter;
+
+    const w = clamp(settings.glitch.windowWidth, 280, viewW * 0.76);
+    const h = clamp(settings.glitch.windowHeight, 112, viewH * 0.28);
+
+    const baseX = Math.round((followerX - w / 2) / block) * block;
+    const baseY = Math.round((followerY - h / 2) / block) * block;
+
+    const cols = Math.max(8, Math.round(w / block));
+    const rows = Math.max(5, Math.round(h / block));
+
+    const mainW = cols * block;
+    const mainH = rows * block;
+
+    targetCtx.save();
+
+    /*
+        ガタガタに崩れた四角い覗き穴。
+        行ごとに左右端をずらして、ただの長方形に見えないようにする。
+    */
+    for (let row = 0; row < rows; row++) {
+        const y = baseY + row * block;
+
+        let leftInset = Math.floor((Math.sin(time * 1.3 + row * 0.82) + 1) * 0.9);
+        let rightInset = Math.floor((Math.cos(time * 1.15 + row * 0.77) + 1) * 0.9);
+
+        if (row === 0 || row === rows - 1) {
+            leftInset = Math.min(jitter, leftInset + 1);
+            rightInset = Math.min(jitter, rightInset + 1);
+        }
+
+        const startX = baseX + leftInset * block;
+        const width = mainW - (leftInset + rightInset) * block;
+
+        if (width > 0) {
+            targetCtx.fillStyle = "rgba(0,0,0,1)";
+            targetCtx.fillRect(startX, y, width, block);
+        }
+    }
+
+    /*
+        上下に少しだけ飛び出しブロック。
+    */
+    for (let col = 0; col < cols; col++) {
+        const x = baseX + col * block;
+
+        const topBlocks = Math.max(
+            0,
+            Math.floor((Math.sin(time * 2.0 + col * 0.68) + 1) * 0.9) - 1
+        );
+
+        const bottomBlocks = Math.max(
+            0,
+            Math.floor((Math.cos(time * 1.85 + col * 0.73) + 1) * 0.9) - 1
+        );
+
+        if ((col % 2 === 0 || col % 5 === 0) && topBlocks > 0) {
+            targetCtx.fillStyle = "rgba(0,0,0,0.30)";
+            targetCtx.fillRect(
+                x,
+                baseY - topBlocks * block,
+                block,
+                topBlocks * block
+            );
+        }
+
+        if ((col % 3 === 0 || col % 4 === 0) && bottomBlocks > 0) {
+            targetCtx.fillStyle = "rgba(0,0,0,0.28)";
+            targetCtx.fillRect(
+                x,
+                baseY + mainH,
+                block,
+                bottomBlocks * block
+            );
+        }
+    }
+
+    /*
+        左右にも少しだけ崩れ。
+    */
+    for (let row = 0; row < rows; row++) {
+        const y = baseY + row * block;
+
+        const leftBlocks = Math.max(
+            0,
+            Math.floor((Math.sin(time * 1.55 + row * 0.92) + 1) * 0.9) - 1
+        );
+
+        const rightBlocks = Math.max(
+            0,
+            Math.floor((Math.cos(time * 1.42 + row * 0.88) + 1) * 0.9) - 1
+        );
+
+        if (row % 2 === 0 && leftBlocks > 0) {
+            targetCtx.fillStyle = "rgba(0,0,0,0.24)";
+            targetCtx.fillRect(
+                baseX - leftBlocks * block,
+                y,
+                leftBlocks * block,
+                block
+            );
+        }
+
+        if (row % 2 === 1 && rightBlocks > 0) {
+            targetCtx.fillStyle = "rgba(0,0,0,0.24)";
+            targetCtx.fillRect(
+                baseX + mainW,
+                y,
+                rightBlocks * block,
+                block
+            );
+        }
+    }
+
+    targetCtx.restore();
+}
+
 function drawRadialMask(targetCtx, x, y, radius, alpha = 1) {
     const gradient = targetCtx.createRadialGradient(
         x,
@@ -548,6 +1209,14 @@ function drawHighlights() {
 
     if (effect === "focus") {
         drawFocusHighlights();
+    }
+
+    if (effect === "water") {
+        drawWaterHighlights();
+    }
+
+    if (effect === "glitch") {
+        drawGlitchHighlights();
     }
 }
 
@@ -654,26 +1323,215 @@ function drawFocusHighlights() {
     });
 }
 
+function drawWaterHighlights() {
+    if (!pointerVisible && waterDrops.length === 0 && waterRipples.length === 0) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    if (pointerVisible) {
+        const glow = ctx.createRadialGradient(
+            followerX,
+            followerY,
+            0,
+            followerX,
+            followerY,
+            150
+        );
+
+        glow.addColorStop(0, "rgba(255,255,255,.20)");
+        glow.addColorStop(0.40, "rgba(255,255,255,.08)");
+        glow.addColorStop(1, "rgba(255,255,255,0)");
+
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(followerX, followerY, 150, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    waterDrops.forEach(drop => {
+        const y = drop.startY + (drop.y - drop.startY) * easeIn(drop.t);
+
+        ctx.globalAlpha = drop.life * 0.42;
+        ctx.fillStyle = "rgba(255,255,255,.7)";
+
+        ctx.beginPath();
+        ctx.ellipse(drop.x, y, 3.2, 9.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    waterRipples.forEach(rp => {
+        const alpha = rp.life;
+
+        ctx.globalAlpha = alpha * 0.32;
+        ctx.strokeStyle = "rgba(255,255,255,.75)";
+        ctx.lineWidth = 1.4;
+
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, rp.radius * 0.48, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.globalAlpha = alpha * 0.16;
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, rp.radius * 0.78, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    ctx.restore();
+}
+
+function drawGlitchHighlights() {
+    if (!pointerVisible) return;
+
+    const time = performance.now() / 1000;
+
+    const block = settings.glitch.blockSize;
+    const shift = settings.glitch.rgbShift;
+
+    const w = clamp(settings.glitch.windowWidth, 280, viewW * 0.76);
+    const h = clamp(settings.glitch.windowHeight, 112, viewH * 0.28);
+
+    const baseX = Math.round((followerX - w / 2) / block) * block;
+    const baseY = Math.round((followerY - h / 2) / block) * block;
+
+    const cols = Math.max(8, Math.round(w / block));
+    const rows = Math.max(5, Math.round(h / block));
+
+    const mainW = cols * block;
+    const mainH = rows * block;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    /*
+        RGBずれした大きめの塊。
+        小粒ではなく、周辺で大きな面がズレる感じ。
+    */
+    const slabLayers = [
+        { dx: -shift, dy: 0, color: "rgba(255, 70, 110, 0.18)" },
+        { dx: shift, dy: 0, color: "rgba(80, 220, 255, 0.18)" },
+        { dx: 0, dy: 0, color: "rgba(255, 255, 255, 0.08)" }
+    ];
+
+    slabLayers.forEach((layer, index) => {
+        const phase = time * (1.2 + index * 0.15);
+
+        ctx.fillStyle = layer.color;
+
+        ctx.fillRect(
+            baseX - block * 2 + Math.sin(phase * 1.4) * 10 + layer.dx,
+            baseY - block * 2 + layer.dy,
+            mainW * 0.72,
+            block * 1.2
+        );
+
+        ctx.fillRect(
+            baseX + mainW * 0.22 + Math.cos(phase * 1.25) * 12 + layer.dx,
+            baseY + mainH + block * 0.8 + layer.dy,
+            mainW * 0.68,
+            block * 1.2
+        );
+
+        ctx.fillRect(
+            baseX - block * 1.6 + layer.dx,
+            baseY + block * 0.4 + Math.sin(phase * 1.1) * 8 + layer.dy,
+            block * 1.1,
+            mainH * 0.55
+        );
+
+        ctx.fillRect(
+            baseX + mainW + block * 0.5 + layer.dx,
+            baseY + mainH * 0.18 + Math.cos(phase * 1.05) * 8 + layer.dy,
+            block * 1.1,
+            mainH * 0.58
+        );
+    });
+
+    /*
+        ガタガタの辺に沿って、RGBのズレ線。
+    */
+    for (let row = 0; row < rows; row++) {
+        const y = baseY + row * block;
+
+        const leftInset = Math.floor((Math.sin(time * 1.3 + row * 0.82) + 1) * 0.9);
+        const rightInset = Math.floor((Math.cos(time * 1.15 + row * 0.77) + 1) * 0.9);
+
+        const leftX = baseX + leftInset * block;
+        const rightX = baseX + mainW - rightInset * block;
+        const width = mainW - (leftInset + rightInset) * block;
+
+        ctx.fillStyle = "rgba(255, 70, 110, 0.22)";
+        ctx.fillRect(leftX - shift, y, block * 0.9, block * 0.18);
+
+        ctx.fillStyle = "rgba(80, 220, 255, 0.22)";
+        ctx.fillRect(rightX + shift - block * 0.9, y + block * 0.82, block * 0.9, block * 0.18);
+        
+    }
+
+    /*
+        中央は薄く明るくして「覗いている」感じを残す。
+    */
+    const glow = ctx.createLinearGradient(
+        baseX,
+        baseY,
+        baseX,
+        baseY + mainH
+    );
+
+    glow.addColorStop(0, "rgba(255,255,255,0.02)");
+    glow.addColorStop(0.5, "rgba(255,255,255,0.06)");
+    glow.addColorStop(1, "rgba(255,255,255,0.02)");
+
+    ctx.fillStyle = glow;
+    ctx.fillRect(baseX, baseY, mainW, mainH);
+
+    ctx.restore();
+}
+
 function decayParticles() {
     cometParticles.forEach(p => {
         p.life *= settings.comet.tailFade;
     });
-
     cometParticles = cometParticles.filter(p => p.life > 0.018);
 
     sparkleParticles.forEach(p => {
         p.life *= 0.94;
         p.rotate += 0.025;
     });
-
     sparkleParticles = sparkleParticles.filter(p => p.life > 0.035);
+
+    waterParticles.forEach(p => {
+        p.life *= settings.water.bloomFade;
+        p.radius *= 1.004;
+    });
+    waterParticles = waterParticles.filter(p => p.life > 0.038);
+
+    waterDrops.forEach(drop => {
+        drop.t += 0.045;
+        drop.life *= 0.98;
+
+        if (drop.t >= 1 && !drop.done) {
+            drop.done = true;
+            spawnRipple(drop.x, drop.y);
+        }
+    });
+    waterDrops = waterDrops.filter(drop => drop.t < 1.08);
+
+    waterRipples.forEach(rp => {
+        rp.life *= 0.935;
+        rp.radius += 5.2;
+    });
+    waterRipples = waterRipples.filter(rp => rp.life > 0.035);
 }
 
 async function showPage(index, direction = 1) {
     if (isChanging) return;
 
     isChanging = true;
+    currentPage = index;
+
     resetEffect();
+    syncCanvasToImage();
 
     bwImage.style.opacity = 0;
     canvas.style.opacity = 0;
@@ -718,36 +1576,36 @@ async function showPage(index, direction = 1) {
 function nextPage() {
     if (isChanging) return;
 
-    currentPage++;
+    let next = currentPage + 1;
 
-    if (currentPage >= pages.length) {
-        currentPage = 0;
+    if (next >= pages.length) {
+        next = 0;
     }
 
-    showPage(currentPage, 1);
+    showPage(next, 1);
 }
 
 function prevPage() {
     if (isChanging) return;
 
-    currentPage--;
+    let prev = currentPage - 1;
 
-    if (currentPage < 0) {
-        currentPage = pages.length - 1;
+    if (prev < 0) {
+        prev = pages.length - 1;
     }
 
-    showPage(currentPage, -1);
+    showPage(prev, -1);
 }
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
-/*
-    ここが今回の大事な変更。
-    スワイプやタップでのページ送りはやめる。
-    画像上の操作は「色を見る」専用にする。
-*/
+function easeIn(t) {
+    return t * t;
+}
+
+/* 鑑賞操作 */
 viewer.addEventListener("pointermove", event => {
     event.preventDefault();
     updatePointer(event.clientX, event.clientY);
@@ -760,6 +1618,10 @@ viewer.addEventListener("pointerdown", event => {
 
     pointerDown = true;
     updatePointer(event.clientX, event.clientY);
+
+    if (currentEffect() === "water" && pointerVisible) {
+        maybeSpawnWaterDrop(pointerX, pointerY);
+    }
 }, { passive: false });
 
 viewer.addEventListener("pointerup", event => {
@@ -771,17 +1633,49 @@ viewer.addEventListener("pointerup", event => {
 
 viewer.addEventListener("pointerleave", () => {
     pointerVisible = false;
+    coverTargetHotness = 0;
 });
 
 viewer.addEventListener("pointercancel", () => {
     pointerVisible = false;
     pointerDown = false;
+    coverTargetHotness = 0;
 });
 
-/* 長押しコピー・コンテキストメニュー対策 */
+/* 長押し・コピー対策 */
 document.addEventListener("contextmenu", event => {
     event.preventDefault();
 });
+
+/* coverのiを押したら開始 */
+if (coverStartButton) {
+    coverStartButton.addEventListener("pointermove", event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        updatePointer(event.clientX, event.clientY);
+    }, { passive: false });
+
+    coverStartButton.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        pointerDown = true;
+        updatePointer(event.clientX, event.clientY);
+        coverTargetHotness = 1;
+        lastCoverInteractionTime = performance.now();
+        viewer.classList.remove("is-cover-hint");
+    }, { passive: false });
+
+    coverStartButton.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isCoverPage()) {
+            nextPage();
+        }
+    });
+}
 
 /* 矢印ボタン */
 prevButton.addEventListener("pointerdown", event => {
@@ -808,15 +1702,15 @@ nextButton.addEventListener("click", event => {
 
 /* キーボード */
 document.addEventListener("keydown", event => {
-    if (event.key === "ArrowRight") {
+    if (event.key === "ArrowRight" && !isCoverPage()) {
         nextPage();
     }
 
-    if (event.key === "ArrowLeft") {
+    if (event.key === "ArrowLeft" && !isCoverPage()) {
         prevPage();
     }
 });
 
 preloadImages();
 render();
-showPage(currentPage, 1);
+showPage(0, 1);
