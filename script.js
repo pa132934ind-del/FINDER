@@ -71,12 +71,36 @@ const pages = [
         bw: "images/straylight/10/bw.jpg",
         color: "images/straylight/10/color.jpg"
     },
+    {
+        unit: "straylight",
+        effect: "glitch",
+        bw: "images/straylight/11/bw.jpg",
+        color: "images/straylight/11/color.jpg"
+    },
+    {
+        unit: "straylight",
+        effect: "glitch",
+        bw: "images/straylight/12/bw.jpg",
+        color: "images/straylight/12/color.jpg"
+    },
 
     {
         unit: "afterword",
         effect: "static",
         bw: "images/afterword/afterword/bw.jpg",
         color: "images/afterword/afterword/bw.jpg"
+    },
+    {
+        unit: "afterword",
+    effect: "static",
+        bw: "images/afterword/afterword/bw_1.jpg",
+        color: "images/afterword/afterword/bw_1.jpg"
+    },
+    {
+        unit: "afterword",
+        effect: "static",
+        bw: "images/afterword/afterword/bw_2.jpg",
+        color: "images/afterword/afterword/bw_2.jpg"
     }
 ];
 
@@ -221,8 +245,8 @@ const settings = {
     glitch: {
         followSpeed: 0.18,
         windowWidth: 280,
-        windowHeight: 125,
-        blockSize: 22,
+        windowHeight: 135,
+        blockSize: 15,
         edgeJitter: 4,
         rgbShift: 12
     }
@@ -1156,7 +1180,7 @@ function drawGlitchMask(targetCtx) {
         );
 
         if (row % 2 === 0 && leftBlocks > 0) {
-            targetCtx.fillStyle = "rgba(0,0,0,0.24)";
+            targetCtx.fillStyle = "rgba(0, 0, 0, 0.78)";
             targetCtx.fillRect(
                 baseX - leftBlocks * block,
                 y,
@@ -1166,7 +1190,7 @@ function drawGlitchMask(targetCtx) {
         }
 
         if (row % 2 === 1 && rightBlocks > 0) {
-            targetCtx.fillStyle = "rgba(0,0,0,0.24)";
+            targetCtx.fillStyle = "rgba(0, 0, 0, 0.59)";
             targetCtx.fillRect(
                 baseX + mainW,
                 y,
