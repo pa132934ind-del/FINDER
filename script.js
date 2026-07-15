@@ -92,7 +92,7 @@ const pages = [
     },
     {
         unit: "afterword",
-    effect: "static",
+        effect: "static",
         bw: "images/afterword/afterword/bw_1.jpg",
         color: "images/afterword/afterword/bw_1.jpg"
     },
@@ -199,6 +199,8 @@ let waterRipples = [];
 let focusRadius = 0;
 let focusClarity = 0;
 let focusCircleSeeds = [];
+let ambientEyes = [];
+let nextAmbientEyeTime = 0;
 
 let coverIX = 0;
 let coverIY = 0;
@@ -213,21 +215,29 @@ let lastCoverInteractionTime = performance.now();
 const settings = {
     comet: {
         headRadius: 38,
-        headMaskAlpha: 0.72,
-        tailFade: 0.962,
+        headMaskAlpha: 0.80,
+        tailFade: 0.965,
         followSpeed: 0.16,
         particleLimit: 80,
-        tailBlur: 5
+        tailBlur: 8
     },
 
     focus: {
-        movingRadius: 78,
-        stillRadius: 152,
+        movingRadius: 96,
+        stillRadius: 182,
         stillGrowSpeed: 0.045,
-        moveShrinkSpeed: 0.055,
-        followSpeed: 0.075,
-        claritySpeed: 0.05,
-        sparkleChance: 0.055
+        moveShrinkSpeed: 0.045,
+        followSpeed: 0.06,
+        claritySpeed: 0.045,
+        sparkleChance: 0.055,
+
+        ambientEyeAlpha: 0.45,
+        ambientEyeLife: 3600,
+        ambientEyeIntervalMin: 250,
+        ambientEyeIntervalMax: 900,
+        ambientEyeLimit: 3,
+        ambientEyeMinRadius: 38,
+        ambientEyeMaxRadius: 112
     },
 
     water: {
@@ -248,7 +258,7 @@ const settings = {
         windowHeight: 135,
         blockSize: 15,
         edgeJitter: 4,
-        rgbShift: 12
+        rgbShift: 18
     }
 };
 
@@ -454,6 +464,8 @@ function resetEffect() {
     focusRadius = 0;
     focusClarity = 0;
     focusCircleSeeds = createFocusCircleSeeds();
+    ambientEyes = [];
+    scheduleNextAmbientEye();
 
     lastWaterSpawnX = 0;
     lastWaterSpawnY = 0;
@@ -489,6 +501,178 @@ function createFocusCircleSeeds() {
         pulse: 0.85 + Math.random() * 0.35,
         index
     }));
+}
+
+function scheduleNextAmbientEye() {
+    const min = settings.focus.ambientEyeIntervalMin;
+    const max = settings.focus.ambientEyeIntervalMax;
+
+    nextAmbientEyeTime = performance.now() + min + Math.random() * (max - min);
+}
+
+function updateAmbientEyes() {
+    if (currentEffect() !== "focus") {
+        ambientEyes = [];
+        return;
+    }
+
+    if (viewW <= 0 || viewH <= 0) return;
+
+    const now = performance.now();
+
+    if (nextAmbientEyeTime === 0) {
+        scheduleNextAmbientEye();
+    }
+
+    ambientEyes = ambientEyes.filter(eye => {
+        return now - eye.startTime < eye.life;
+    });
+
+    if (now < nextAmbientEyeTime) return;
+
+    if (ambientEyes.length < settings.focus.ambientEyeLimit) {
+        spawnAmbientEye(now);
+    }
+
+    scheduleNextAmbientEye();
+}
+
+function spawnAmbientEye(now) {
+    const marginX = Math.min(viewW * 0.14, 120);
+    const marginY = Math.min(viewH * 0.12, 150);
+
+    const usableW = Math.max(1, viewW - marginX * 2);
+    const usableH = Math.max(1, viewH - marginY * 2);
+
+    const minR = settings.focus.ambientEyeMinRadius;
+    const maxR = Math.min(
+        settings.focus.ambientEyeMaxRadius,
+        Math.min(viewW, viewH) * 0.16
+    );
+
+    ambientEyes.push({
+        x: marginX + Math.random() * usableW,
+        y: marginY + Math.random() * usableH,
+        radius: minR + Math.random() * (maxR - minR),
+        startTime: now,
+        life: settings.focus.ambientEyeLife * (0.86 + Math.random() * 0.34),
+        rotation: 0,
+        seed: Math.random() * Math.PI * 2
+    });
+}
+
+function getAmbientEyeState(eye, now) {
+    const t = clamp((now - eye.startTime) / eye.life, 0, 1);
+
+    const fadeIn = smoothstep(0.00, 0.18, t);
+    const fadeOut = 1 - smoothstep(0.74, 1.00, t);
+
+    let open = 1;
+
+    if (t < 0.20) {
+        open = 0.05 + 0.95 * smoothstep(0.00, 0.20, t);
+    } else if (t < 0.52) {
+        open = 0.92 + Math.sin((t - 0.20) * Math.PI * 3.0 + eye.seed) * 0.04;
+    } else if (t < 0.78) {
+        open = 0.92 - 0.62 * smoothstep(0.52, 0.78, t);
+    } else {
+        open = 0.30 * (1 - smoothstep(0.78, 1.00, t));
+    }
+
+    return {
+        t,
+        open: clamp(open, 0.01, 1),
+        alpha: settings.focus.ambientEyeAlpha * fadeIn * fadeOut
+    };
+}
+
+function drawSharpEyePath(targetCtx, radius, open) {
+    const eyeHeight = radius * clamp(open, 0.01, 1) * 0.52;
+
+    targetCtx.beginPath();
+    targetCtx.moveTo(-radius, 0);
+    targetCtx.quadraticCurveTo(0, -eyeHeight, radius, 0);
+    targetCtx.quadraticCurveTo(0, eyeHeight, -radius, 0);
+    targetCtx.closePath();
+}
+
+function drawAmbientEyeMasks(targetCtx) {
+    if (ambientEyes.length === 0) return;
+
+    const now = performance.now();
+
+    targetCtx.save();
+
+    ambientEyes.forEach(eye => {
+        const state = getAmbientEyeState(eye, now);
+
+        if (state.alpha <= 0.004) return;
+
+        const r = eye.radius;
+        const open = state.open;
+        const alpha = state.alpha;
+
+        targetCtx.save();
+        targetCtx.translate(eye.x, eye.y);
+        targetCtx.rotate(eye.rotation);
+
+        drawSharpEyePath(targetCtx, r, open);
+        targetCtx.clip();
+
+        const gradient = targetCtx.createRadialGradient(
+            0,
+            0,
+            r * 0.08,
+            0,
+            0,
+            r
+        );
+
+        gradient.addColorStop(0, `rgba(0,0,0,${alpha})`);
+        gradient.addColorStop(0.54, `rgba(0,0,0,${alpha * 0.58})`);
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+
+        targetCtx.fillStyle = gradient;
+        targetCtx.fillRect(-r, -r, r * 2, r * 2);
+
+        targetCtx.restore();
+    });
+
+    targetCtx.restore();
+}
+
+function drawAmbientEyeHighlights() {
+    if (ambientEyes.length === 0) return;
+
+    const now = performance.now();
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    ambientEyes.forEach(eye => {
+        const state = getAmbientEyeState(eye, now);
+
+        if (state.alpha <= 0.004) return;
+
+        const r = eye.radius;
+        const open = state.open;
+        const alpha = state.alpha;
+
+        ctx.save();
+        ctx.translate(eye.x, eye.y);
+        ctx.rotate(eye.rotation);
+
+        ctx.globalAlpha = alpha * 1.7;
+        ctx.strokeStyle = "rgba(255,255,255,.30)";
+        ctx.lineWidth = 1;
+
+        drawSharpEyePath(ctx, r * 0.94, open);
+        ctx.stroke();
+
+        ctx.restore();
+    });
+
+    ctx.restore();
 }
 
 function updatePointer(clientX, clientY) {
@@ -682,6 +866,7 @@ function render() {
     updateCoverState();
     updateCoverGlitch();
     updateCoverHint();
+    updateAmbientEyes();
 
     if (colorImage.complete && colorImage.naturalWidth > 0 && viewW > 0 && viewH > 0) {
         if (currentEffect() === "cover") {
@@ -933,6 +1118,18 @@ function drawCometMask(targetCtx) {
 }
 
 function drawFocusMask(targetCtx) {
+    const hasAmbientEyes = ambientEyes.length > 0;
+
+    if (focusRadius < 1 && !hasAmbientEyes) return;
+
+    /*
+        ランダムに開閉する薄い目。
+    */
+    drawAmbientEyeMasks(targetCtx);
+
+    /*
+        カーソルで現れるメインの焦点円。
+    */
     if (focusRadius < 1) return;
 
     const r = focusRadius;
@@ -1272,6 +1469,8 @@ function drawCometHighlights() {
 }
 
 function drawFocusHighlights() {
+    drawAmbientEyeHighlights();
+
     const r = focusRadius;
     const clarity = focusClarity;
     const time = performance.now() / 1000;
@@ -1432,9 +1631,9 @@ function drawGlitchHighlights() {
         小粒ではなく、周辺で大きな面がズレる感じ。
     */
     const slabLayers = [
-        { dx: -shift, dy: 0, color: "rgba(255, 70, 110, 0.18)" },
-        { dx: shift, dy: 0, color: "rgba(80, 220, 255, 0.18)" },
-        { dx: 0, dy: 0, color: "rgba(255, 255, 255, 0.08)" }
+        { dx: -shift, dy: 0, color: "rgba(255, 70, 110, 0.38)" },
+        { dx: shift, dy: 0, color: "rgba(80, 220, 255, 0.38)" },
+        { dx: 0, dy: 0, color: "rgba(255, 255, 255, 0.10)" }
     ];
 
     slabLayers.forEach((layer, index) => {
@@ -1482,14 +1681,12 @@ function drawGlitchHighlights() {
 
         const leftX = baseX + leftInset * block;
         const rightX = baseX + mainW - rightInset * block;
-        const width = mainW - (leftInset + rightInset) * block;
 
-        ctx.fillStyle = "rgba(255, 70, 110, 0.22)";
+        ctx.fillStyle = "rgba(255, 70, 110, 0.38)";
         ctx.fillRect(leftX - shift, y, block * 0.9, block * 0.18);
 
-        ctx.fillStyle = "rgba(80, 220, 255, 0.22)";
+        ctx.fillStyle = "rgba(80, 220, 255, 0.38)";
         ctx.fillRect(rightX + shift - block * 0.9, y + block * 0.82, block * 0.9, block * 0.18);
-        
     }
 
     /*
@@ -1513,6 +1710,12 @@ function drawGlitchHighlights() {
 }
 
 function decayParticles() {
+    const now = performance.now();
+
+    ambientEyes = ambientEyes.filter(eye => {
+        return currentEffect() === "focus" && now - eye.startTime < eye.life;
+    });
+
     cometParticles.forEach(p => {
         p.life *= settings.comet.tailFade;
     });
@@ -1623,6 +1826,11 @@ function prevPage() {
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+}
+
+function smoothstep(edge0, edge1, value) {
+    const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
 }
 
 function easeIn(t) {
